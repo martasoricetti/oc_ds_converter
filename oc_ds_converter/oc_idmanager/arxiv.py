@@ -186,7 +186,7 @@ class ArXivManager(IdentifierManager):
                                 feed = obj.get("feed")
                                 results = feed.get("opensearch:totalResults")
                                 try:
-                                    results_n = int(results.get("#text"))
+                                    results_n = int(results)
                                 except:
                                     results_n = 0
 
@@ -228,3 +228,4 @@ class ArXivManager(IdentifierManager):
         result["valid"] = True
         # to be implemented
         return result
+
