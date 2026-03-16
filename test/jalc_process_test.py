@@ -297,5 +297,83 @@ class TestJalcProcess(unittest.TestCase):
                 shutil.rmtree(os.path.join(self.sample_dump_dir, el))
 
 
+    def test_preprocess_second_run_produces_same_output(self):
+        """Test that running preprocess twice produces the same output.
+
+        This verifies that the PROCESS-DB is properly cleaned up after each run,
+        so that a second execution doesn't skip entities that were already processed.
+        """
+        for el in os.listdir(self.sample_dump_dir):
+            if el.endswith("decompr_zip_dir"):
+                shutil.rmtree(os.path.join(self.sample_dump_dir, el))
+
+        if os.path.exists(self.output_dir):
+            shutil.rmtree(self.output_dir)
+
+        citations_output_path = self.output_dir + "_citations"
+        if os.path.exists(citations_output_path):
+            shutil.rmtree(citations_output_path)
+
+        # First run
+        preprocess(
+            jalc_json_dir=self.sample_dump_dir,
+            orcid_doi_filepath=self.orcid_doi,
+            csv_dir=self.output_dir,
+            cache=self.cache_test
+        )
+
+        # Count entities from first run
+        first_run_entities = 0
+        for file in os.listdir(self.output_dir):
+            with open(os.path.join(self.output_dir, file), 'r', encoding='utf-8') as f:
+                first_run_entities += len(list(csv.DictReader(f)))
+
+        first_run_citations = 0
+        for file in os.listdir(citations_output_path):
+            with open(os.path.join(citations_output_path, file), 'r', encoding='utf-8') as f:
+                first_run_citations += len(list(csv.DictReader(f)))
+
+        # Clean output directories
+        shutil.rmtree(self.output_dir)
+        shutil.rmtree(citations_output_path)
+
+        for el in os.listdir(self.sample_dump_dir):
+            if el.endswith("decompr_zip_dir"):
+                shutil.rmtree(os.path.join(self.sample_dump_dir, el))
+
+        # Second run - should produce the same output
+        preprocess(
+            jalc_json_dir=self.sample_dump_dir,
+            orcid_doi_filepath=self.orcid_doi,
+            csv_dir=self.output_dir,
+            cache=self.cache_test
+        )
+
+        # Count entities from second run
+        second_run_entities = 0
+        for file in os.listdir(self.output_dir):
+            with open(os.path.join(self.output_dir, file), 'r', encoding='utf-8') as f:
+                second_run_entities += len(list(csv.DictReader(f)))
+
+        second_run_citations = 0
+        for file in os.listdir(citations_output_path):
+            with open(os.path.join(citations_output_path, file), 'r', encoding='utf-8') as f:
+                second_run_citations += len(list(csv.DictReader(f)))
+
+        # Both runs should produce the same number of entities
+        self.assertEqual(first_run_entities, 13)
+        self.assertEqual(second_run_entities, 13)
+        self.assertEqual(first_run_citations, 8)
+        self.assertEqual(second_run_citations, 8)
+
+        # Cleanup
+        shutil.rmtree(self.output_dir)
+        shutil.rmtree(citations_output_path)
+
+        for el in os.listdir(self.sample_dump_dir):
+            if el.endswith("decompr_zip_dir"):
+                shutil.rmtree(os.path.join(self.sample_dump_dir, el))
+
+
 if __name__ == '__main__':
     unittest.main()

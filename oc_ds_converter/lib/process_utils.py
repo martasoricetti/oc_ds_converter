@@ -120,10 +120,9 @@ def write_csv_output(filepath: str, rows: list[dict[str, str]]) -> None:
         dict_writer.writerows(rows)
 
 
-def cleanup_testing_storage(testing: bool) -> None:
-    if testing:
-        storage_manager = RedisStorageManager(testing=testing)
-        storage_manager.delete_storage()
+def cleanup_storage(testing: bool) -> None:
+    storage_manager = RedisStorageManager(testing=testing)
+    storage_manager.delete_storage()
 
 
 def is_file_in_cache(

@@ -123,10 +123,7 @@ class RedisDataSource(DataSource):
         return result
 
     def flushdb(self) -> None:
-        batch_size = 1000
-        keys: list[str] = cast(list[str], self._r.keys('*'))
-        for i in range(0, len(keys), batch_size):
-            self._r.delete(*keys[i:i+batch_size])
+        self._r.flushdb()
 
     def delete(self, resource_id: str) -> None:
         self._r.delete(resource_id)

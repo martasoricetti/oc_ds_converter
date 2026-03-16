@@ -41,7 +41,7 @@ from oc_ds_converter.lib.console import advance_progress, console, create_progre
 from oc_ds_converter.lib.file_manager import normalize_path, pathoo
 from oc_ds_converter.lib.jsonmanager import get_all_files_by_type, load_json
 from oc_ds_converter.lib.process_utils import (
-    cleanup_testing_storage,
+    cleanup_storage,
     delete_cache_files,
     get_storage_manager,
     init_process_cache,
@@ -335,7 +335,7 @@ def preprocess(
 
     cache_path = cache if cache else os.path.join(os.getcwd(), "cache.json")
     delete_cache_files(cache_path)
-    cleanup_testing_storage(testing)
+    cleanup_storage(testing)
 
 
 def get_citations_and_metadata(file_name, targz_fd, preprocessed_citations_dir: str, csv_dir: str,
