@@ -655,7 +655,7 @@ class DataciteProcessing(RaProcessor):
                     "lang": "en"
                   }
         accepted identifiers for publishers in Meta: https://opencitations.github.io/oc_meta/reference/csv_format/#responsible-agents
-        [orcid, viaf, crossref, wikidata, ror]
+        [orcid, viaf, wikidata, ror]
         """
         publisher_name = publisher_item.get("name") or ""
         # 1. Normalizzazione ed esclusione publisher invalidi tramite Regex
