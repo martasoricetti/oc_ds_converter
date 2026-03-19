@@ -1,51 +1,43 @@
-import gzip
 import csv
-import json
-from os import makedirs
-import os
-import os.path
-from oc_ds_converter.oc_idmanager.arxiv import ArXivManager
-from oc_ds_converter.oc_idmanager.doi import DOIManager
-from oc_ds_converter.oc_idmanager.pmid import PMIDManager
-from oc_ds_converter.oc_idmanager.pmcid import PMCIDManager
-from oc_ds_converter.oc_idmanager.orcid import ORCIDManager
-
-from datetime import datetime
-from argparse import ArgumentParser
 import html
 import json
 import os
+import os.path
 import pathlib
 import re
 import warnings
 from os.path import exists
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional, Type, Callable
+from re import search
 
-import fakeredis
 from bs4 import BeautifulSoup
-from oc_ds_converter.datasource.redis import RedisDataSource
-from re import search, match, sub
-from oc_ds_converter.lib.cleaner import Cleaner
-from oc_ds_converter.lib.master_of_regex import *
+
+from oc_ds_converter.datasource.redis import FakeRedisWrapper, RedisDataSource
+from oc_ds_converter.oc_idmanager.arxiv import ArXivManager
+from oc_ds_converter.oc_idmanager.doi import DOIManager
+from oc_ds_converter.oc_idmanager.oc_data_storage.redis_manager import RedisStorageManager
+from oc_ds_converter.oc_idmanager.oc_data_storage.storage_manager import StorageManager
+from oc_ds_converter.oc_idmanager.oc_data_storage.batch_manager import BatchManager
+from oc_ds_converter.oc_idmanager.orcid import ORCIDManager
+from oc_ds_converter.oc_idmanager.pmcid import PMCIDManager
+from oc_ds_converter.oc_idmanager.pmid import PMIDManager
 from oc_ds_converter.pubmed.get_publishers import ExtractPublisherDOI
 from oc_ds_converter.ra_processor import RaProcessor
-from oc_ds_converter.oc_idmanager.oc_data_storage.storage_manager import StorageManager
-from oc_ds_converter.oc_idmanager.oc_data_storage.in_memory_manager import InMemoryStorageManager
-from oc_ds_converter.oc_idmanager.oc_data_storage.sqlite_manager import SqliteStorageManager
 
 warnings.filterwarnings("ignore", category=UserWarning, module='bs4')
 
 
 class OpenaireProcessing(RaProcessor):
-    def __init__(self, orcid_index: str = None, doi_csv: str = None, publishers_filepath_openaire: str = None, testing:bool = True, storage_manager:Optional[StorageManager] = None):
-        super(OpenaireProcessing, self).__init__(orcid_index, doi_csv)
+    def __init__(self, orcid_index: str | None = None, publishers_filepath_openaire: str | None = None, storage_manager: StorageManager | None = None, testing: bool = True, exclude_existing: bool = False):
+        super(OpenaireProcessing, self).__init__(orcid_index)
+        self.exclude_existing = exclude_existing
+        self._testing = testing
         if storage_manager is None:
-            self.storage_manager = SqliteStorageManager()
+            self.storage_manager = RedisStorageManager(testing=testing)
         else:
             self.storage_manager = storage_manager
 
-        self.temporary_manager = InMemoryStorageManager('../memory.json')
+        self.temporary_manager = BatchManager()
 
         self.types_dict = {
             "Article": "journal article",
@@ -88,12 +80,12 @@ class OpenaireProcessing(RaProcessor):
             "Bioentity": "other",
             "Sound": "other",
         }
-        self.doi_m = DOIManager(storage_manager=self.storage_manager)
-        self.pmid_m = PMIDManager(storage_manager=self.storage_manager)
-        self.pmc_m = PMCIDManager(storage_manager=self.storage_manager)
-        self.arxiv_m = ArXivManager(storage_manager=self.storage_manager)
+        self.doi_m = DOIManager(storage_manager=self.storage_manager, testing=testing)
+        self.pmid_m = PMIDManager(storage_manager=self.storage_manager, testing=testing)
+        self.pmc_m = PMCIDManager(storage_manager=self.storage_manager, testing=testing)
+        self.arxiv_m = ArXivManager(storage_manager=self.storage_manager, testing=testing)
 
-        self.orcid_m = ORCIDManager(storage_manager=self.storage_manager)
+        self.orcid_m = ORCIDManager(storage_manager=self.storage_manager, testing=testing)
 
         self._id_man_dict = {"doi":self.doi_m, "pmid": self.pmid_m, "pmcid": self.pmc_m,"pmc": self.pmc_m, "arxiv":self.arxiv_m}
 
@@ -104,12 +96,12 @@ class OpenaireProcessing(RaProcessor):
         # a storage_manager db would be considered to have been processed and thus would be ignored by the process
         # and lost.
 
-        self.tmp_doi_m = DOIManager(storage_manager=self.temporary_manager)
-        self.tmp_pmid_m = PMIDManager(storage_manager=self.temporary_manager)
-        self.tmp_pmc_m = PMCIDManager(storage_manager=self.temporary_manager)
-        self.tmp_arxiv_m = ArXivManager(storage_manager=self.temporary_manager)
+        self.tmp_doi_m = DOIManager(storage_manager=self.temporary_manager, testing=testing)
+        self.tmp_pmid_m = PMIDManager(storage_manager=self.temporary_manager, testing=testing)
+        self.tmp_pmc_m = PMCIDManager(storage_manager=self.temporary_manager, testing=testing)
+        self.tmp_arxiv_m = ArXivManager(storage_manager=self.temporary_manager, testing=testing)
 
-        self.tmp_orcid_m = ORCIDManager(storage_manager=self.temporary_manager)
+        self.tmp_orcid_m = ORCIDManager(storage_manager=self.temporary_manager, testing=testing)
 
         self.tmp_id_man_dict = {"doi": self.tmp_doi_m, "pmid": self.tmp_pmid_m, "pmcid": self.tmp_pmc_m, "pmc": self.tmp_pmc_m,
                              "arxiv": self.tmp_arxiv_m}
@@ -135,9 +127,8 @@ class OpenaireProcessing(RaProcessor):
         }
 
         if testing:
-            self.BR_redis = fakeredis.FakeStrictRedis()
-            self.RA_redis = fakeredis.FakeStrictRedis()
-
+            self.BR_redis = FakeRedisWrapper()
+            self.RA_redis = FakeRedisWrapper()
         else:
             self.BR_redis = RedisDataSource("DB-META-BR")
             self.RA_redis = RedisDataSource("DB-META-RA")
@@ -196,10 +187,14 @@ class OpenaireProcessing(RaProcessor):
 
         if schema != "orcid":
             tmp_id_m = self.get_id_manager(schema, self.tmp_id_man_dict)
+            if tmp_id_m is None:
+                return None
             validity_value = tmp_id_m.validated_as_id(id)
 
             if validity_value is None:
                 id_m = self.get_id_manager(schema, self._id_man_dict)
+                if id_m is None:
+                    return None
                 validity_value = id_m.validated_as_id(id)
             return validity_value
 
@@ -222,8 +217,10 @@ class OpenaireProcessing(RaProcessor):
         id_man = id_man_dict.get(schema)
         return id_man
 
-    def normalise_any_id(self, id_with_prefix):
+    def normalise_any_id(self, id_with_prefix: str) -> str | None:
         id_man = self.get_id_manager(id_with_prefix, self._id_man_dict)
+        if id_man is None:
+            return None
         id_no_pref = ":".join(id_with_prefix.split(":")[1:])
         norm_id_w_pref = id_man.normalise(id_no_pref, include_prefix=True)
         return norm_id_w_pref
@@ -348,7 +345,7 @@ class OpenaireProcessing(RaProcessor):
             print(row)
             raise(TypeError)
 
-    def get_publisher_name(self, doi_list: list, item: dict) -> str:
+    def get_publisher_name(self, doi_list: list, item: dict | str) -> str:
         '''
         This function aims to return a publisher's name and id. If a mapping was provided,
         it is used to find the publisher's standardized name from its id or DOI prefix.
@@ -364,7 +361,8 @@ class OpenaireProcessing(RaProcessor):
         elif "name" not in item:
             return ""
 
-        publisher = item.get("name") if item.get("name") else ""
+        name_value = item["name"]
+        publisher: str = name_value if isinstance(name_value, str) else ""
 
         if publisher and doi_list:
             for doi in doi_list:
@@ -392,7 +390,7 @@ class OpenaireProcessing(RaProcessor):
             if schema == "doi":
                 id = ent.get("identifier")
                 splitted_pref = id.split('/')[0]
-                pref = re.findall("(10.\d{4,9})", splitted_pref)[0]
+                pref = re.findall(r"(10.\d{4,9})", splitted_pref)[0]
                 if pref == "10.48550":
                     if id.startswith("doi:"):
                         id = id[len("doi:"):]
@@ -426,7 +424,7 @@ class OpenaireProcessing(RaProcessor):
         if len(arxiv_or_figshare_dois) == 1:
             id_dict = arxiv_or_figshare_dois[0]
             is_arxiv = self._doi_prefixes_publishers_dict[id_dict.get("identifier").split("/")[0]].get("publisher") == "arxiv"
-            has_version = search("v\d+", id_dict.get("identifier"))
+            has_version = search(r"v\d+", id_dict.get("identifier"))
             if has_version: # It is necessarily a figshare doi (ARXIV have version only in arxiv id and not in arxiv dois)
                 #√
                 return arxiv_or_figshare_dois
@@ -443,7 +441,7 @@ class OpenaireProcessing(RaProcessor):
                     return self.manage_arxiv_single_id([id_dict])
 
         elif len(arxiv_or_figshare_dois) > 1:
-            versioned_arxiv_or_figshare_dois = [x for x in arxiv_or_figshare_dois if search("v\d+", x.get("identifier"))]
+            versioned_arxiv_or_figshare_dois = [x for x in arxiv_or_figshare_dois if search(r"v\d+", x.get("identifier"))]
             if versioned_arxiv_or_figshare_dois:
                 # √
                 return versioned_arxiv_or_figshare_dois
@@ -472,7 +470,7 @@ class OpenaireProcessing(RaProcessor):
                     try:
                         int_n = int(n)
                         list_of_id_n_int.append(int_n)
-                    except:
+                    except ValueError:
                         pass
                 if list_of_id_n_int:
                     last_assigned_id = str(max(list_of_id_n_int))
@@ -491,6 +489,8 @@ class OpenaireProcessing(RaProcessor):
                 for id_dict in id_dict_list:
                     if id_dict.get("identifier").split("/")[0] in prefixes_w_max_priority:
                         norm_id = self.doi_m.normalise(id_dict["identifier"], include_prefix=True)
+                        if norm_id is None:
+                            continue
                         #if self.BR_redis.get(norm_id):
                         if norm_id in self._redis_values_br:
                             result_id_dict_list.append(id_dict)
@@ -512,6 +512,8 @@ class OpenaireProcessing(RaProcessor):
                         for id_dict in id_dict_list:
                             if id_dict.get("identifier").split("/")[0] in prefixes_w_max_priority:
                                 norm_id = self.doi_m.normalise(id_dict["identifier"], include_prefix=True)
+                                if norm_id is None:
+                                    continue
                                 #if self.BR_redis.get(norm_id):
                                 if norm_id in self._redis_values_br:
                                     result_id_dict_list.append(id_dict)
@@ -567,7 +569,11 @@ class OpenaireProcessing(RaProcessor):
             for ent in to_be_processed_id_dict_list:
                 schema = ent.get("schema")
                 norm_id = ent.get("identifier")
+                if schema is None or norm_id is None:
+                    continue
                 tmp_id_man = self.get_id_manager(schema, self.tmp_id_man_dict)
+                if tmp_id_man is None:
+                    continue
                 if schema in {"pmid", "pmcid", "pmc", "arxiv", "doi"}:
                     #if self.BR_redis.get(norm_id):
                     if norm_id in self._redis_values_br:
@@ -593,8 +599,9 @@ class OpenaireProcessing(RaProcessor):
         '''
 
         agent_list = ag_list
-        if item.get("creator"):
-            for author in item.get("creator"):
+        creators = item.get("creator")
+        if creators:
+            for author in creators:
                 agent = {}
                 agent["role"] = "author"
                 agent["name"] = author.get("name") if author.get("name") else ""
@@ -619,6 +626,8 @@ class OpenaireProcessing(RaProcessor):
                     if schema.lower().strip() == "orcid":
                         if isinstance(identifier, str):
                             norm_orcid = self.orcid_m.normalise(identifier, include_prefix=True)
+                            if norm_orcid is None:
+                                continue
                             ## Check orcid presence in memory and storage before validating the id
                             validity_value_orcid = self.validated_as({"identifier":norm_orcid, "schema": schema})
                             if validity_value_orcid is True:
@@ -682,25 +691,14 @@ class OpenaireProcessing(RaProcessor):
         all_ra = list(all_ra)
         return all_br, all_ra
 
-    def get_reids_validity_list(self, id_list, redis_db):
+    def get_redis_validity_list(self, id_list, redis_db):
+        ids = list(id_list)
         if redis_db == "ra":
-            valid_ra_ids = []
-            # DO NOT UPDATED (REDIS RETRIEVAL METHOD HERE)
-            validity_list_ra = self.RA_redis.mget(id_list)
-            for i, e in enumerate(id_list):
-                if validity_list_ra[i]:
-                    valid_ra_ids.append(e)
-            return valid_ra_ids
-
+            validity = self.RA_redis.mexists_as_set(ids)
+            return [ids[i] for i, v in enumerate(validity) if v]
         elif redis_db == "br":
-            valid_br_ids = []
-            # DO NOT UPDATED (REDIS RETRIEVAL METHOD HERE)
-            validity_list_br = self.BR_redis.mget(id_list)
-            for i, e in enumerate(id_list):
-                if validity_list_br[i]:
-                    valid_br_ids.append(e)
-            return valid_br_ids
+            validity = self.BR_redis.mexists_as_set(ids)
+            return [ids[i] for i, v in enumerate(validity) if v]
         else:
-            raise ValueError("redis_db must be either 'ra' for responsible agents ids "
-                             "or 'br' for bibliographic resources ids")
+            raise ValueError("redis_db must be either 'ra' or 'br'")
 

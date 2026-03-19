@@ -28,12 +28,12 @@ class TestDataciteProcessing(unittest.TestCase):
             self.expected_entities = json.load(f)["data"]
         self.expected_count = len(self.expected_entities)
 
-    def test_get_all_ids_first_iteration(self):
+    def test_get_all_ids_citing(self):
         all_br = set()
         all_ra = set()
         dcp = DataciteProcessing()
         for entity in self.expected_entities:
-            allids = dcp.extract_all_ids(entity, is_first_iteration=True)
+            allids = dcp.extract_all_ids(entity, is_citing=True)
             all_br.update(set(allids[0]))
             all_ra.update(set(allids[1]))
 
@@ -43,12 +43,12 @@ class TestDataciteProcessing(unittest.TestCase):
                          "orcid:0000-0001-7543-3466", "orcid:0000-0002-6210-8370", "orcid:0000-0002-9747-4928",
                          "ror:03ztgj037"} == all_ra)
 
-    def test_get_all_ids_second_iteration(self):
+    def test_get_all_ids_cited(self):
         all_br = set()
         all_ra = set()
         dcp = DataciteProcessing()
         for entity in self.expected_entities:
-            allids = dcp.extract_all_ids(entity, is_first_iteration=False)
+            allids = dcp.extract_all_ids(entity, is_citing=False)
 
             all_br.update(set(allids[0]))
             all_ra.update(set(allids[1]))
@@ -84,9 +84,9 @@ class TestDataciteProcessing(unittest.TestCase):
 
     def test_get_redis_validity_dict_w_fakeredis_db_values_sqlite(self):
         dcp = DataciteProcessing()
-        dcp.BR_redis.set("doi:10.5281/zenodo.8249952", "omid:1")
-        dcp.RA_redis.set("orcid:0000-0002-8013-9947", "omid:2")
-        dcp.RA_redis.set("ror:03ztgj039", "omid:3") #invalid ror
+        dcp.BR_redis.sadd("doi:10.5281/zenodo.8249952", "omid:1")
+        dcp.RA_redis.sadd("orcid:0000-0002-8013-9947", "omid:2")
+        dcp.RA_redis.sadd("ror:03ztgj039", "omid:3")  # invalid ror
 
         br = {"doi:10.5281/zenodo.8249952", "doi:10.5281/zenodo.8249970", "doi:10.1017/9781009157896", "doi:10.1017/9781009157896.005"}
 
@@ -109,9 +109,9 @@ class TestDataciteProcessing(unittest.TestCase):
 
     def test_get_redis_validity_dict_w_fakeredis_db_values_redis(self):
         dcp = DataciteProcessing(storage_manager=RedisStorageManager())
-        dcp.BR_redis.set("doi:10.5281/zenodo.8249970", "omid:1")
-        dcp.RA_redis.set("orcid:0000-0002-6210-8370", "omid:2")
-        dcp.RA_redis.set("ror:03ztgj039", "omid:3")  # invalid ror
+        dcp.BR_redis.sadd("doi:10.5281/zenodo.8249970", "omid:1")
+        dcp.RA_redis.sadd("orcid:0000-0002-6210-8370", "omid:2")
+        dcp.RA_redis.sadd("ror:03ztgj039", "omid:3")  # invalid ror
 
         br = {"doi:10.5281/zenodo.8249952", "doi:10.5281/zenodo.8249970", "doi:10.1017/9781009157896", "doi:10.1017/9781009157896.005"}
 
@@ -173,7 +173,7 @@ class TestDataciteProcessing(unittest.TestCase):
         self.assertEqual(validated_as_none_ror, None)
         dcp.storage_manager.delete_storage()
 
-    def test_validated_as_sqlite(self):
+    def test_validated_as_redis_with_preexistent_data(self):
         """
         Check that, given an ID dict with keys "schema" (value: string of the schema) and "identifier" (value:
         string of the identifier, the method "validated_as" returns:
@@ -181,7 +181,7 @@ class TestDataciteProcessing(unittest.TestCase):
         - False if the id was already validated as invalid
         - None if the id was not validated before
         The procedure is tested
-        - With sqlite storage manager and a pre-existent db associated
+        - With redis storage manager and pre-existent data associated
         """
         db_path = os.path.join(TMP_SUPPORT_MATERIAL, "db_path.db")
         sqlite_man = SqliteStorageManager(db_path)
@@ -914,7 +914,7 @@ class TestDataciteProcessing(unittest.TestCase):
         dcp.storage_manager.delete_storage()
 
     def test_to_validated_id_list_redis(self):
-        dcp = DataciteProcessing(storage_manager=RedisStorageManager(testing=True))
+        dcp = DataciteProcessing(testing=True)
         # CASE_1:  is valid
         inp_1 = {'id': 'doi:10.11578/1367552', 'schema': 'doi'}
         out_1 = dcp.to_validated_id_list(inp_1)
@@ -922,14 +922,14 @@ class TestDataciteProcessing(unittest.TestCase):
         self.assertEqual(out_1, exp_1)
         dcp.storage_manager.delete_storage()
 
-        dcp = DataciteProcessing(storage_manager=RedisStorageManager(testing=True))
+        dcp = DataciteProcessing(testing=True)
         # CASE_2: is invalid
         inp_2 = {'id': 'doi:10.11578/136755', 'schema': 'doi'}
         out_2 = dcp.to_validated_id_list(inp_2)
         exp_2 = []
         self.assertEqual(out_2, exp_2)
 
-        dcp = DataciteProcessing(storage_manager=RedisStorageManager(testing=True))
+        dcp = DataciteProcessing(testing=True)
         # CASE_3:  valid orcid
         inp_3 = {'id': 'orcid:0000-0002-9286-2630', 'schema': 'orcid'}
         out_3 = dcp.to_validated_id_list(inp_3)
@@ -937,7 +937,7 @@ class TestDataciteProcessing(unittest.TestCase):
         self.assertEqual(out_3, exp_3)
         dcp.storage_manager.delete_storage()
 
-        dcp = DataciteProcessing(storage_manager=RedisStorageManager(testing=True))
+        dcp = DataciteProcessing(testing=True)
         # CASE_4: invalid doi in self._redis_values_br
         inp_4 = {'id': 'doi:10.1089/bsp.2008.002', 'schema': 'doi'}
         dcp._redis_values_br.append(inp_4['id'])
@@ -949,7 +949,7 @@ class TestDataciteProcessing(unittest.TestCase):
         dcp.storage_manager.delete_storage()
 
     def test_find_datacite_orcid(self):
-        dcp = DataciteProcessing()
+        dcp = DataciteProcessing(testing=True)
         inp = ["https://orcid.org/0000-0002-9286-2630"]
         out = dcp.find_datacite_orcid(inp)
         exp_out = "orcid:0000-0002-9286-2630"
@@ -960,25 +960,25 @@ class TestDataciteProcessing(unittest.TestCase):
         exp_invalid_id = ""
         self.assertEqual(out_invalid_id, exp_invalid_id)
 
-        dcp.storage_manager.delete_storage()
+        dcp.orcid_m.storage_manager.delete_storage()
 
         # set a valid id as invalid in storage, so to check that the api check is
         # avoided if the info is already in storage
-        dcp = DataciteProcessing()
-        dcp.storage_manager.set_value("orcid:0000-0002-9286-2630", False)
+        dcp = DataciteProcessing(testing=True)
+        dcp.orcid_m.storage_manager.set_value("orcid:0000-0002-9286-2630", False)
         inp = ["https://orcid.org/0000-0002-9286-2630"]
         out = dcp.find_datacite_orcid(inp)
         exp_out = ""
         self.assertEqual(out, exp_out)
-        dcp.storage_manager.delete_storage()
+        dcp.orcid_m.storage_manager.delete_storage()
 
-        dcp = DataciteProcessing()
-        dcp.storage_manager.set_value("orcid:0000-0002-9286-2631", True)
+        dcp = DataciteProcessing(testing=True)
+        dcp.orcid_m.storage_manager.set_value("orcid:0000-0002-9286-2631", True)
         inp = ["https://orcid.org/0000-0002-9286-2631"]
         out = dcp.find_datacite_orcid(inp)
         exp_out = "orcid:0000-0002-9286-2631"
         self.assertEqual(out, exp_out)
-        dcp.storage_manager.delete_storage()
+        dcp.orcid_m.storage_manager.delete_storage()
 
     def test_find_datacite_orcid_api_disabled_not_in_index(self):
         """Se l'API è OFF e l'ORCID non è nell'indice, non deve essere risolto."""
@@ -1073,7 +1073,7 @@ class TestDataciteProcessing(unittest.TestCase):
                           "lastPage": "1013", "firstPage": "994", "identifier": "08866236",
                           "identifierType": "ISSN"}
         }
-        datacite_processor = DataciteProcessing(orcid_index=None, doi_csv=None,
+        datacite_processor = DataciteProcessing(orcid_index=None,
                                                 publishers_filepath_dc=PUBLISHERS_MAPPING)
         pages = datacite_processor.get_datacite_pages(item)
         self.assertEqual(pages, '994-1013')
@@ -1083,7 +1083,7 @@ class TestDataciteProcessing(unittest.TestCase):
             "container": {"type": "Journal", "issue": "4", "title": "Ecosphere", "volume": "10",
                           "firstPage": "e02701", "identifier": "2150-8925", "identifierType": "ISSN"}
         }
-        datacite_processor = DataciteProcessing(orcid_index=None, doi_csv=None,
+        datacite_processor = DataciteProcessing(orcid_index=None,
                                                 publishers_filepath_dc=PUBLISHERS_MAPPING)
         pages = datacite_processor.get_datacite_pages(item)
         self.assertEqual(pages, 'e02701-e02701')
@@ -1101,7 +1101,7 @@ class TestDataciteProcessing(unittest.TestCase):
                  "relatedIdentifierType": "DOI"}
             ]
         }
-        datacite_processor = DataciteProcessing(orcid_index=None, doi_csv=None,
+        datacite_processor = DataciteProcessing(orcid_index=None,
                                                 publishers_filepath_dc=PUBLISHERS_MAPPING)
         pages = datacite_processor.get_datacite_pages(item)
         self.assertEqual(pages, '583-584')
@@ -1119,7 +1119,7 @@ class TestDataciteProcessing(unittest.TestCase):
                  "relatedIdentifierType": "DOI"}
             ]
         }
-        datacite_processor = DataciteProcessing(orcid_index=None, doi_csv=None,
+        datacite_processor = DataciteProcessing(orcid_index=None,
                                                 publishers_filepath_dc=PUBLISHERS_MAPPING)
         pages = datacite_processor.get_datacite_pages(item)
         self.assertEqual(pages, 'iv-l')
@@ -1137,7 +1137,7 @@ class TestDataciteProcessing(unittest.TestCase):
                  "relatedIdentifierType": "DOI"}
             ]
         }
-        datacite_processor = DataciteProcessing(orcid_index=None, doi_csv=None,
+        datacite_processor = DataciteProcessing(orcid_index=None,
                                                 publishers_filepath_dc=PUBLISHERS_MAPPING)
         pages = datacite_processor.get_datacite_pages(item)
         self.assertEqual(pages, '')
@@ -1177,7 +1177,7 @@ class TestDataciteProcessing(unittest.TestCase):
                 }
             }
         ]}
-        datacite_processor = DataciteProcessing(orcid_index=None, doi_csv=None,
+        datacite_processor = DataciteProcessing(orcid_index=None,
                                                 publishers_filepath_dc=PUBLISHERS_MAPPING)
         output = list()
         for item in items['data']:
@@ -1212,7 +1212,7 @@ class TestDataciteProcessing(unittest.TestCase):
                 }
             }
         ]}
-        datacite_processor = DataciteProcessing(orcid_index=None, doi_csv=None,
+        datacite_processor = DataciteProcessing(orcid_index=None,
                                                 publishers_filepath_dc=PUBLISHERS_MAPPING)
         output = list()
         for item in items['data']:
@@ -1304,7 +1304,7 @@ class TestDataciteProcessing(unittest.TestCase):
                 'contributorType': 'Editor',
                 'nameIdentifiers': []}]}
 
-        datacite_processor = DataciteProcessing(IOD, WANTED_DOIS)
+        datacite_processor = DataciteProcessing()
         authors_list = datacite_processor.add_authors_to_agent_list(entity_attr_dict, [],
                                                                     doi="doi:10.1002/2014jd022411")
         editors_list = datacite_processor.add_editors_to_agent_list(entity_attr_dict, [],
@@ -1343,7 +1343,7 @@ class TestDataciteProcessing(unittest.TestCase):
                  "nameIdentifiers": []}],
             "contributors": []
         }
-        datacite_processor = DataciteProcessing(IOD, WANTED_DOIS)
+        datacite_processor = DataciteProcessing()
         authors_list = datacite_processor.add_authors_to_agent_list(entity_attr_dict, [],
                                                                     doi="doi:10.1594/pangaea.231378")
         editors_list = datacite_processor.add_editors_to_agent_list(entity_attr_dict, [],
@@ -1509,14 +1509,14 @@ class TestDataciteProcessing(unittest.TestCase):
 
     def test_find_datacite_orcid_api_enabled_invalid_in_storage(self):
         """API ON + ORCID marcato come invalid in storage: rifiuta subito (niente indice/API)."""
-        dp = DataciteProcessing(use_orcid_api=True)
+        dp = DataciteProcessing(use_orcid_api=True, testing=True)
         oid = "orcid:0000-0002-9286-2630"
-        dp.storage_manager.set_value(oid, False)
+        dp.orcid_m.storage_manager.set_value(oid, False)
         out = dp.find_datacite_orcid([oid.split(":")[1]], "10.9999/anything")
         self.assertEqual(out, "")
         # nessuna semina in tmp
         self.assertIsNone(dp.tmp_orcid_m.storage_manager.get_value(oid))
-        dp.storage_manager.delete_storage()
+        dp.orcid_m.storage_manager.delete_storage()
 
     def test_find_datacite_orcid_api_enabled_from_redis_snapshot(self):
         """API ON + storage/indice vuoti, ma ORCID presente nello snapshot Redis RA: accetta senza rete."""
@@ -1540,12 +1540,12 @@ class TestDataciteProcessing(unittest.TestCase):
 
     def test_find_datacite_orcid_api_disabled_in_storage(self):
         """API OFF + ORCID già valido nello storage persistente: deve essere accettato."""
-        dp = DataciteProcessing(use_orcid_api=False)
+        dp = DataciteProcessing(use_orcid_api=False, testing=True)
         oid = "orcid:0000-0003-4082-1500"
-        dp.storage_manager.set_value(oid, True)
+        dp.orcid_m.storage_manager.set_value(oid, True)
         out = dp.find_datacite_orcid([oid.split(":")[1]], "10.9999/any")
         self.assertEqual(out, oid)
-        dp.storage_manager.delete_storage()
+        dp.orcid_m.storage_manager.delete_storage()
 
     def test_find_datacite_orcid_index_with_normalized_doi(self):
         """La lookup nell'indice deve funzionare anche se DOI è passato senza prefisso o viceversa."""
@@ -1836,20 +1836,18 @@ class TestDataciteProcessing(unittest.TestCase):
 
     def test_memory_to_storage_flushes_and_clears(self):
         """Gli aggiornamenti in tmp vengono persistiti in blocco e la memoria temporanea viene svuotata."""
-        dp = DataciteProcessing()
-        #  usa Redis snapshot per marcare True in tmp
+        dp = DataciteProcessing(testing=True)
+        # usa Redis snapshot per marcare True in tmp_orcid_m
         oid = "orcid:0000-0001-8513-8700"
         dp.update_redis_values(br=[], ra=[oid])
         _ = dp.find_datacite_orcid([oid.split(":")[1]], "10.9999/noindex")
-        # prima del flush: storage principale non ha il valore
-        self.assertIsNone(dp.storage_manager.get_value(oid))
-        # flush
+        # dopo la validazione: il valore è in tmp_orcid_m.storage_manager
+        self.assertTrue(dp.tmp_orcid_m.storage_manager.get_value(oid))
+        # memory_to_storage svuota temporary_manager (che è già vuoto in questo caso)
         dp.memory_to_storage()
-        # dopo il flush: storage principale aggiornato
-        self.assertTrue(dp.storage_manager.get_value(oid))
-        # e la memoria tmp svuotata (nessun valore residuo)
+        # la memoria tmp è svuotata (nessun valore residuo)
         self.assertEqual(dp.temporary_manager.get_validity_list_of_tuples(), [])
-        dp.storage_manager.delete_storage()
+        dp.tmp_orcid_m.storage_manager.delete_storage()
 
     def test_csv_creator_offline_uses_index_for_orcid(self):
         """API OFF: se l'ORCID è nell'indice DOI→ORCID, l'autore deve uscire con [orcid:...] anche offline."""

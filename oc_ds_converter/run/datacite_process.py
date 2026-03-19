@@ -1,23 +1,22 @@
-from json import JSONDecodeError
-from pathlib import Path
-import yaml
-from oc_ds_converter.lib.file_manager import normalize_path
-from oc_ds_converter.lib.jsonmanager import *
-from pebble import ProcessFuture, ProcessPool
-from oc_ds_converter.oc_idmanager.oc_data_storage.redis_manager import \
-    RedisStorageManager
-from oc_ds_converter.oc_idmanager.oc_data_storage.sqlite_manager import \
-    SqliteStorageManager
-from oc_ds_converter.oc_idmanager.oc_data_storage.in_memory_manager import \
-    InMemoryStorageManager
-from oc_ds_converter.datacite.datacite_processing import DataciteProcessing
-import json
 import csv
-from filelock import Timeout, FileLock
-from tqdm import tqdm
-from argparse import ArgumentParser
-import sys
+import json
 import os
+import sys
+from argparse import ArgumentParser
+from concurrent.futures import ProcessPoolExecutor
+from json import JSONDecodeError
+from multiprocessing import get_context
+from pathlib import Path
+
+import yaml
+from filelock import FileLock
+from tqdm import tqdm
+
+from oc_ds_converter.datacite.datacite_processing import DataciteProcessing
+from oc_ds_converter.lib.file_manager import normalize_path
+from oc_ds_converter.oc_idmanager.oc_data_storage.in_memory_manager import InMemoryStorageManager
+from oc_ds_converter.oc_idmanager.oc_data_storage.redis_manager import RedisStorageManager
+from oc_ds_converter.oc_idmanager.oc_data_storage.sqlite_manager import SqliteStorageManager
 
 
 def preprocess(datacite_json_dir:str, publishers_filepath:str|None, orcid_doi_filepath:str|None,
@@ -35,14 +34,12 @@ def preprocess(datacite_json_dir:str, publishers_filepath:str|None, orcid_doi_fi
     bad_dir = os.path.join(csv_dir, "_bad")  # creato solo on-demand in read_json
 
     if verbose:
-        if publishers_filepath or orcid_doi_filepath or wanted_doi_filepath:
+        if publishers_filepath or orcid_doi_filepath:
             what = list()
             if publishers_filepath:
                 what.append('publishers mapping')
             if orcid_doi_filepath:
                 what.append('DOI-ORCID index')
-            if wanted_doi_filepath:
-                what.append('wanted DOIs CSV')
             log = '[INFO: datacite_process] Processing: ' + '; '.join(what)
             print(log)
 
@@ -82,42 +79,45 @@ def preprocess(datacite_json_dir:str, publishers_filepath:str|None, orcid_doi_fi
                 continue
 
     elif redis_storage_manager or max_workers > 1:
-        futures_pass1, futures_pass2 = [], []
-        with ProcessPool(max_workers=max_workers, max_tasks=1) as executor:
-            # Pass 1: last arg True
+        with ProcessPoolExecutor(max_workers=max_workers, mp_context=get_context('spawn')) as executor:
+            # Pass 1: is_first_iteration=True
+            futures_pass1 = []
             for json_file in tqdm(all_input_json):
                 chunk = read_json(json_file, bad_dir)
                 if chunk:
-                    future = executor.schedule(
+                    future = executor.submit(
                         get_citations_and_metadata,
-                        args=(json_file, chunk, preprocessed_citations_dir, csv_dir,
-                              orcid_doi_filepath, wanted_doi_filepath,
-                              publishers_filepath, storage_path, redis_storage_manager,
-                              testing, cache, True, use_orcid_api, use_ror_api, use_viaf_api, use_wikidata_api))
+                        json_file, chunk, preprocessed_citations_dir, csv_dir,
+                        orcid_doi_filepath, wanted_doi_filepath,
+                        publishers_filepath, storage_path, redis_storage_manager,
+                        testing, cache, True, use_orcid_api, use_ror_api, use_viaf_api, use_wikidata_api)
                     futures_pass1.append(future)
-                else:
-                    continue
 
-            # Pass 2: same files, last arg False
+            for future in futures_pass1:
+                try:
+                    future.result()
+                except Exception as e:
+                    print(f"Task failed: {e}")
+
+        with ProcessPoolExecutor(max_workers=max_workers, mp_context=get_context('spawn')) as executor:
+            # Pass 2: is_first_iteration=False
+            futures_pass2 = []
             for json_file in tqdm(all_input_json):
                 chunk = read_json(json_file, bad_dir)
                 if chunk:
-                    future = executor.schedule(
+                    future = executor.submit(
                         get_citations_and_metadata,
-                        args=(json_file, chunk, preprocessed_citations_dir, csv_dir,
-                              orcid_doi_filepath, wanted_doi_filepath,
-                              publishers_filepath, storage_path, redis_storage_manager,
-                              testing, cache, False, use_orcid_api, use_ror_api, use_viaf_api, use_wikidata_api))
-                    futures_pass1.append(future)
-                else:
-                    continue
+                        json_file, chunk, preprocessed_citations_dir, csv_dir,
+                        orcid_doi_filepath, wanted_doi_filepath,
+                        publishers_filepath, storage_path, redis_storage_manager,
+                        testing, cache, False, use_orcid_api, use_ror_api, use_viaf_api, use_wikidata_api)
+                    futures_pass2.append(future)
 
-        # Wait for all (parallel across passes)
-        for future in futures_pass1 + futures_pass2:
-            try:
-                future.result()  # Blocks until done; raises if error/timeout
-            except Exception as e:
-                print(f"Task failed: {e}")  # Log errors
+            for future in futures_pass2:
+                try:
+                    future.result()
+                except Exception as e:
+                    print(f"Task failed: {e}")
 
     if cache:
         if os.path.exists(cache):
@@ -135,7 +135,7 @@ def preprocess(datacite_json_dir:str, publishers_filepath:str|None, orcid_doi_fi
             os.remove(lock_file)
 
     if testing:
-        storage_manager = get_storage_manager(storage_path, redis_storage_manager, testing=testing)
+        storage_manager = RedisStorageManager(testing=testing)
         storage_manager.delete_storage()
 
 
@@ -145,8 +145,11 @@ def get_citations_and_metadata(json_file:str, chunk: list, preprocessed_citation
                                redis_storage_manager: bool,
                                testing: bool, cache: str, is_first_iteration:bool, use_orcid_api: bool, use_ror_api: bool,
                                use_viaf_api: bool, use_wikidata_api: bool):
+    if redis_storage_manager:
+        storage_manager = RedisStorageManager(testing=testing)
+    else:
+        storage_manager = SqliteStorageManager(storage_path) if storage_path else InMemoryStorageManager()
 
-    storage_manager = get_storage_manager(storage_path, redis_storage_manager, testing=testing)
     if cache:
         if not cache.endswith(".json"):
             cache = os.path.join(os.getcwd(), "cache.json")
@@ -165,7 +168,7 @@ def get_citations_and_metadata(json_file:str, chunk: list, preprocessed_citation
             with open(cache, "r", encoding="utf-8") as c:
                 try:
                     cache_dict = json.load(c)
-                except:
+                except json.JSONDecodeError:
                     write_new = True
     else:
         write_new = True
@@ -242,9 +245,9 @@ def get_citations_and_metadata(json_file:str, chunk: list, preprocessed_citation
         redis_validity_values_ra = dc_csv.get_reids_validity_list(all_ra, "ra")
         dc_csv.update_redis_values(redis_validity_values_br, redis_validity_values_ra)
 
-    def save_files(ent_list, citation_list, is_first_iteration_par:bool):
+    def save_files(ent_list, citation_list, is_citing_par:bool):
         if ent_list:
-            if is_first_iteration_par:
+            if is_citing_par:
                 filename_str = filepath_ne+"_subject.csv"
             else:
                 filename_str = filepath_ne+"_object.csv"
@@ -256,7 +259,7 @@ def get_citations_and_metadata(json_file:str, chunk: list, preprocessed_citation
             ent_list = []
         dc_csv.memory_to_storage()
 
-        if not is_first_iteration_par:
+        if not is_citing_par:
             if citation_list:
                 filename_cit_str = filepath_citations_ne + ".csv"
                 with open(filename_cit_str, 'w', newline='', encoding='utf-8') as output_file_citations:
@@ -267,7 +270,7 @@ def get_citations_and_metadata(json_file:str, chunk: list, preprocessed_citation
                 citation_list = []
 
         dc_csv.memory_to_storage()
-        if is_first_iteration_par:
+        if is_citing_par:
             task_done(is_first_iteration_par=True)
         else:
             task_done(is_first_iteration_par=False)
@@ -276,11 +279,11 @@ def get_citations_and_metadata(json_file:str, chunk: list, preprocessed_citation
 
     def task_done(is_first_iteration_par: bool) -> None:
         try:
-            if is_first_iteration_par and "first_iteration" not in cache_dict.keys():
-                cache_dict["first_iteration"] = set()
+            if is_first_iteration_par and "citing" not in cache_dict.keys():
+                cache_dict["citing"] = set()
 
-            if not is_first_iteration_par and "second_iteration" not in cache_dict.keys():
-                cache_dict["second_iteration"] = set()
+            if not is_first_iteration_par and "cited" not in cache_dict.keys():
+                cache_dict["cited"] = set()
 
             for k,v in cache_dict.items():
                 cache_dict[k] = set(v)
@@ -384,6 +387,14 @@ def get_citations_and_metadata(json_file:str, chunk: list, preprocessed_citation
                                                     norm_id_dict = {"id": norm_object_id, "schema": "doi"}
                                                     # valido l'identificativo
                                                     if norm_object_id in dc_csv.to_validated_id_list(norm_id_dict):
+                                                        if dc_csv.exclude_existing and dc_csv.BR_redis.exists_as_set(norm_object_id):
+                                                            if relationType in ["cites", "references"]:
+                                                                rel_dict = {"rel_type": "cites", "object_id": norm_object_id}
+                                                                valid_target_ids.append(rel_dict)
+                                                            elif relationType in ["iscitedby", "isreferencedby"]:
+                                                                rel_dict = {"rel_type": "iscitedby", "object_id": norm_object_id}
+                                                                valid_target_ids.append(rel_dict)
+                                                            continue
                                                         target_tab_data = dc_csv.csv_creator({"id": norm_object_id, "type": "dois", "attributes": {"doi": norm_object_id}})
                                                         if target_tab_data:
                                                             processed_target_id = target_tab_data.get("id")
@@ -392,15 +403,17 @@ def get_citations_and_metadata(json_file:str, chunk: list, preprocessed_citation
 
                                                                 if relationType in ["cites", "references"]:
                                                                     rel_dict = {"rel_type": "cites", "object_id": norm_object_id}
+                                                                    valid_target_ids.append(rel_dict)
                                                                 elif relationType in ["iscitedby", "isreferencedby"]:
                                                                     rel_dict = {"rel_type": "iscitedby", "object_id": norm_object_id}
-                                                                valid_target_ids.append(rel_dict)
+                                                                    valid_target_ids.append(rel_dict)
                                                 elif stored_validity is True:
                                                     if relationType in ["cites", "references"]:
                                                         rel_dict = {"rel_type": "cites", "object_id": norm_object_id}
+                                                        valid_target_ids.append(rel_dict)
                                                     elif relationType in ["iscitedby", "isreferencedby"]:
                                                         rel_dict = {"rel_type": "iscitedby", "object_id": norm_object_id}
-                                                    valid_target_ids.append(rel_dict)
+                                                        valid_target_ids.append(rel_dict)
 
                             unique_dicts = [dict(t) for t in {tuple(sorted(d.items())) for d in valid_target_ids}]
                             for rel_type_dict in unique_dicts:
@@ -421,30 +434,6 @@ def get_citations_and_metadata(json_file:str, chunk: list, preprocessed_citation
                 print(f"Details: {e}")
                 continue
         save_files(data_object, index_citations_to_csv, False)
-
-def get_storage_manager(storage_path: str, redis_storage_manager: bool, testing: bool):
-    if not redis_storage_manager:
-        if storage_path:
-            if not os.path.exists(storage_path):
-            # if parent dir does not exist, it is created
-                if not os.path.exists(os.path.abspath(os.path.join(storage_path, os.pardir))):
-                    Path(os.path.abspath(os.path.join(storage_path, os.pardir))).mkdir(parents=True, exist_ok=True)
-            if storage_path.endswith(".db"):
-                storage_manager = SqliteStorageManager(storage_path)
-            elif storage_path.endswith(".json"):
-                storage_manager = InMemoryStorageManager(storage_path)
-
-        if not storage_path and not redis_storage_manager:
-            new_path_dir = os.path.join(os.getcwd(), "storage")
-            if not os.path.exists(new_path_dir):
-                os.makedirs(new_path_dir)
-            storage_manager = SqliteStorageManager(os.path.join(new_path_dir, "id_valid_dict.db"))
-    elif redis_storage_manager:
-        if testing:
-            storage_manager = RedisStorageManager(testing=True)
-        else:
-            storage_manager = RedisStorageManager(testing=False)
-    return storage_manager
 
 def pathoo(path:str) -> None:
     if not os.path.exists(os.path.dirname(path)):
@@ -493,26 +482,15 @@ if __name__ == '__main__':
                             help='CSV file path containing information about publishers (id, name, prefix)')
     arg_parser.add_argument('-o', '--orcid', dest='orcid_doi_filepath', required=False,
                             help='DOI-ORCID index filepath, to enrich data')
-    arg_parser.add_argument('-w', '--wanted', dest='wanted_doi_filepath', required=False,
-                            help='A CSV filepath containing what DOI to process, not mandatory')
     arg_parser.add_argument('-ca', '--cache', dest='cache', required=False,
                             help='The cache file path. This file will be deleted at the end of the process')
     arg_parser.add_argument('-v', '--verbose', dest='verbose', action='store_true', required=False,
                             help='Show extra informational logs')
-    arg_parser.add_argument('-sp', '--storage_path', dest='storage_path', required=False,
-                            help='path of the file where to store data concerning validated pids information.'
-                                 'Pay attention to specify a ".db" file in case you chose the SqliteStorageManager'
-                                 'and a ".json" file if you chose InMemoryStorageManager')
     arg_parser.add_argument('-t', '--testing', dest='testing', action='store_true', required=False,
                             help='parameter to define if the script is to be run in testing mode. Pay attention:'
                                  'by default the script is run in test modality and thus the data managed by redis, '
                                  'stored in a specific redis db, are not retrieved nor permanently saved, since an '
                                  'instance of a FakeRedis class is created and deleted by the end of the process.')
-    arg_parser.add_argument('-r', '--redis_storage_manager', dest='redis_storage_manager', action='store_true',
-                            required=False,
-                            help='parameter to define whether or not to use redis as storage manager. Note that by default the parameter '
-                                 'value is set to false, which means that -unless it is differently stated- the storage manager used is'
-                                 'the one chosen as value of the parameter --storage_manager. The redis db used by the storage manager is the n.2')
     arg_parser.add_argument('-m', '--max_workers', dest='max_workers', required=False, default=1, type=int,
                             help='Workers number')
     arg_parser.add_argument('--no-orcid-api', dest='no_orcid_api', action='store_true', required=False,
@@ -540,15 +518,10 @@ if __name__ == '__main__':
     publishers_filepath = normalize_path(publishers_filepath) if publishers_filepath else None
     orcid_doi_filepath = settings['orcid_doi_filepath'] if settings else args.orcid_doi_filepath
     orcid_doi_filepath = normalize_path(orcid_doi_filepath) if orcid_doi_filepath else None
-    wanted_doi_filepath = settings['wanted_doi_filepath'] if settings else args.wanted_doi_filepath
-    wanted_doi_filepath = normalize_path(wanted_doi_filepath) if wanted_doi_filepath else None
     cache = settings['cache_filepath'] if settings else args.cache
     cache = normalize_path(cache) if cache else None
     verbose = settings['verbose'] if settings else args.verbose
-    storage_path = settings['storage_path'] if settings else args.storage_path
-    storage_path = normalize_path(storage_path) if storage_path else None
     testing = settings['testing'] if settings else args.testing
-    redis_storage_manager = settings['redis_storage_manager'] if settings else args.redis_storage_manager
     max_workers = settings['max_workers'] if settings else args.max_workers
     no_orcid_api = settings.get('disable_orcid_api', False) if settings else args.no_orcid_api
     no_ror_api = settings.get('disable_ror_api', False) if settings else args.no_ror_api

@@ -1,12 +1,8 @@
-from oc_ds_converter.lib.jsonmanager import *
 import os
-from oc_ds_converter.openaire.openaire_processing import OpenaireProcessing
-
 import unittest
-from oc_ds_converter.oc_idmanager.oc_data_storage.in_memory_manager import InMemoryStorageManager
-from oc_ds_converter.oc_idmanager.oc_data_storage.sqlite_manager import SqliteStorageManager
-from oc_ds_converter.oc_idmanager.oc_data_storage.redis_manager import RedisStorageManager
-from fakeredis import FakeStrictRedis
+
+from oc_ds_converter.lib.jsonmanager import *
+from oc_ds_converter.openaire.openaire_processing import OpenaireProcessing
 #
 
 BASE = os.path.join('test', 'openaire_processing')
@@ -47,34 +43,34 @@ class TestOpenaireProcessing(unittest.TestCase):
         opp.storage_manager.delete_storage()
 
     def test_get_all_ids_redis(self):
-        opp = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
+        opp = OpenaireProcessing(testing=True)
         allids = opp.extract_all_ids(SAMPLE_ENT2)
         self.assertCountEqual(['pmid:24484640', 'pmcid:PMC3928621', 'doi:10.2307/3053861'], allids[0])
         self.assertCountEqual(['orcid:0000-0002-8090-6886', 'orcid:0000-0002-6491-0754'], allids[1])
         opp.storage_manager.delete_storage()
 
-    def test_get_reids_validity_list(self):
+    def test_get_redis_validity_list(self):
         br = {'pmid:24484640', 'pmcid:PMC3928621', 'doi:10.2307/3053861'}
         ra = {'orcid:0000-0002-8090-6886', 'orcid:0000-0002-6491-0754'}
 
         opp = OpenaireProcessing()
-        br_valid_list = opp.get_reids_validity_list(br, "br")
+        br_valid_list = opp.get_redis_validity_list(br, "br")
         exp_exp_br_valid_list = []
-        ra_valid_list = opp.get_reids_validity_list(ra, "ra")
+        ra_valid_list = opp.get_redis_validity_list(ra, "ra")
         exp_exp_ra_valid_list = []
         self.assertEqual(ra_valid_list, exp_exp_ra_valid_list)
         self.assertEqual(br_valid_list, exp_exp_br_valid_list)
 
         opp.storage_manager.delete_storage()
 
-    def test_get_reids_validity_list_redis(self):
+    def test_get_redis_validity_list_redis(self):
         br = {'pmid:24484640', 'pmcid:PMC3928621', 'doi:10.2307/3053861'}
         ra = {'orcid:0000-0002-8090-6886', 'orcid:0000-0002-6491-0754'}
 
-        opp = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
-        br_valid_list = opp.get_reids_validity_list(br, "br")
+        opp = OpenaireProcessing(testing=True)
+        br_valid_list = opp.get_redis_validity_list(br, "br")
         exp_exp_br_valid_list = []
-        ra_valid_list = opp.get_reids_validity_list(ra, "ra")
+        ra_valid_list = opp.get_redis_validity_list(ra, "ra")
         exp_exp_ra_valid_list = []
         self.assertEqual(ra_valid_list, exp_exp_ra_valid_list)
         self.assertEqual(br_valid_list, exp_exp_br_valid_list)
@@ -82,16 +78,15 @@ class TestOpenaireProcessing(unittest.TestCase):
 
     def test_get_reids_validity_dict_w_fakeredis_db_values_sqlite(self):
         opp = OpenaireProcessing()
-        opp.BR_redis.set('pmid:24484640', "omid:1")
-        opp.RA_redis.set('orcid:0000-0002-8090-6886', "omid:2")
-
+        opp.BR_redis.sadd('pmid:24484640', "omid:1")
+        opp.RA_redis.sadd('orcid:0000-0002-8090-6886', "omid:2")
 
         br = {'pmid:24484640', 'pmcid:PMC3928621', 'doi:10.2307/3053861'}
         ra = {'orcid:0000-0002-8090-6886', 'orcid:0000-0002-6491-0754'}
 
-        br_validity_dict = opp.get_reids_validity_list(br, "br")
+        br_validity_dict = opp.get_redis_validity_list(br, "br")
         exp_br_valid_list = ["pmid:24484640"]
-        ra_validity_dict = opp.get_reids_validity_list(ra, "ra")
+        ra_validity_dict = opp.get_redis_validity_list(ra, "ra")
         exp_ra_valid_list = ['orcid:0000-0002-8090-6886']
         self.assertEqual(br_validity_dict, exp_br_valid_list)
         self.assertEqual(ra_validity_dict, exp_ra_valid_list)
@@ -103,18 +98,17 @@ class TestOpenaireProcessing(unittest.TestCase):
         opp.RA_redis.delete('orcid:0000-0002-8090-6886')
 
     def test_get_reids_validity_dict_w_fakeredis_db_values_redis(self):
-
-        opp = OpenaireProcessing(storage_manager=RedisStorageManager())
-        opp.BR_redis.set('pmid:24484640', "omid:1")
-        opp.RA_redis.set('orcid:0000-0002-8090-6886', "omid:2")
+        opp = OpenaireProcessing(testing=True)
+        opp.BR_redis.sadd('pmid:24484640', "omid:1")
+        opp.RA_redis.sadd('orcid:0000-0002-8090-6886', "omid:2")
 
 
         br = {'pmid:24484640', 'pmcid:PMC3928621', 'doi:10.2307/3053861'}
         ra = {'orcid:0000-0002-8090-6886', 'orcid:0000-0002-6491-0754'}
 
-        br_validity_dict = opp.get_reids_validity_list(br, "br")
+        br_validity_dict = opp.get_redis_validity_list(br, "br")
         exp_br_valid_list = ["pmid:24484640"]
-        ra_validity_dict = opp.get_reids_validity_list(ra, "ra")
+        ra_validity_dict = opp.get_redis_validity_list(ra, "ra")
         exp_ra_valid_list = ['orcid:0000-0002-8090-6886']
         self.assertEqual(br_validity_dict, exp_br_valid_list)
         self.assertEqual(ra_validity_dict, exp_ra_valid_list)
@@ -151,12 +145,12 @@ class TestOpenaireProcessing(unittest.TestCase):
         - With redis storage manager without a pre-existent db associated
         '''
 
-        opp = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
+        opp = OpenaireProcessing(testing=True)
         validate_as_none = opp.validated_as({"schema":"pmid", "identifier": "pmid:23483834"})
         self.assertEqual(validate_as_none, None)
         opp.storage_manager.delete_storage()
 
-    def test_validated_as_sqlite(self):
+    def test_validated_as_redis_with_preexistent_data(self):
         '''
         Check that, given an ID dict with keys "schema" (value: string of the schema) and "identifier" (value:
         string of the identifier, the method "validated_as" returns:
@@ -164,30 +158,25 @@ class TestOpenaireProcessing(unittest.TestCase):
         - False if the id was already validated as invalid
         - None if the id was not validated before
         The procedure is tested
-        - With sqlite storage manager without a pre-existent db associated
-        - With sqlite storage manager and a pre-existent db associated
+        - With redis storage manager and pre-existent data associated
         '''
-
-        db_path = os.path.join(TMP_SUPPORT_MATERIAL, "db_path.db")
-
-        sqlite_man = SqliteStorageManager(db_path)
         valid_pmid_not_in_db = {"identifier":"pmid:2938", "schema":"pmid"}
         valid_pmid_in_db = {"identifier":"pmid:23483834", "schema":"pmid"}
         invalid_pmid_in_db = {"identifier":"pmid:18328387372097", "schema":"pmid"}
-        sqlite_man.set_value(valid_pmid_in_db["identifier"], True)
-        sqlite_man.set_value(invalid_pmid_in_db["identifier"], False)
 
-        # New class instance to check the correct task management with a sqlite db in input
-        opp_sql = OpenaireProcessing(storage_manager=sqlite_man)
-        validated_as_True = opp_sql.validated_as(valid_pmid_in_db)
-        validated_as_False = opp_sql.validated_as(invalid_pmid_in_db)
-        not_validated = opp_sql.validated_as(valid_pmid_not_in_db)
+        # New class instance and set values directly on the id managers' storage_manager
+        opp_redis = OpenaireProcessing(testing=True)
+        opp_redis.pmid_m.storage_manager.set_value(valid_pmid_in_db["identifier"], True)
+        opp_redis.pmid_m.storage_manager.set_value(invalid_pmid_in_db["identifier"], False)
+        validated_as_True = opp_redis.validated_as(valid_pmid_in_db)
+        validated_as_False = opp_redis.validated_as(invalid_pmid_in_db)
+        not_validated = opp_redis.validated_as(valid_pmid_not_in_db)
 
         self.assertEqual(validated_as_True, True)
         self.assertEqual(validated_as_False, False)
         self.assertEqual(not_validated, None)
 
-        opp_sql.storage_manager.delete_storage()
+        opp_redis.pmid_m.storage_manager.delete_storage()
 
 
     def test_validated_as_inmemory(self):
@@ -202,18 +191,14 @@ class TestOpenaireProcessing(unittest.TestCase):
         - With in Memory + Json storage manager without a pre-existent db associated
         '''
 
-        db_json_path = os.path.join(TMP_SUPPORT_MATERIAL, "db_path.json")
-
-        inmemory_man = InMemoryStorageManager(db_json_path)
         valid_pmid_not_in_db = {"identifier":"pmid:2938", "schema":"pmid"}
         valid_pmid_in_db = {"identifier":"pmid:23483834", "schema":"pmid"}
         invalid_pmid_in_db = {"identifier":"pmid:18328387372097", "schema":"pmid"}
-        inmemory_man.set_value(valid_pmid_in_db["identifier"], True)
-        inmemory_man.set_value(invalid_pmid_in_db["identifier"], False)
-        inmemory_man.store_file()
 
-        # New class instance to check the correct task management with a sqlite db in input
-        opp_sql = OpenaireProcessing(storage_manager=inmemory_man)
+        # New class instance and set values directly on the id managers' storage_manager
+        opp_sql = OpenaireProcessing(testing=True)
+        opp_sql.pmid_m.storage_manager.set_value(valid_pmid_in_db["identifier"], True)
+        opp_sql.pmid_m.storage_manager.set_value(invalid_pmid_in_db["identifier"], False)
         validated_as_True = opp_sql.validated_as(valid_pmid_in_db)
         validated_as_False = opp_sql.validated_as(invalid_pmid_in_db)
         not_validated = opp_sql.validated_as(valid_pmid_not_in_db)
@@ -222,7 +207,7 @@ class TestOpenaireProcessing(unittest.TestCase):
         self.assertEqual(validated_as_False, False)
         self.assertEqual(not_validated, None)
 
-        opp_sql.storage_manager.delete_storage()
+        opp_sql.pmid_m.storage_manager.delete_storage()
 
 
     def test_validated_as_redis(self):
@@ -237,15 +222,14 @@ class TestOpenaireProcessing(unittest.TestCase):
         - With REDIS storage manager without a pre-existent db associated
         '''
 
-        redis_man = RedisStorageManager(testing=True)
         valid_pmid_not_in_db = {"identifier":"pmid:2938", "schema":"pmid"}
         valid_pmid_in_db = {"identifier":"pmid:23483834", "schema":"pmid"}
         invalid_pmid_in_db = {"identifier":"pmid:18328387372097", "schema":"pmid"}
-        redis_man.set_value(valid_pmid_in_db["identifier"], True)
-        redis_man.set_value(invalid_pmid_in_db["identifier"], False)
 
-        # New class instance to check the correct task management with a redis manager using a db with data
-        opp_redis = OpenaireProcessing(storage_manager=redis_man)
+        # New class instance and set values directly on the id managers' storage_manager
+        opp_redis = OpenaireProcessing(testing=True)
+        opp_redis.pmid_m.storage_manager.set_value(valid_pmid_in_db["identifier"], True)
+        opp_redis.pmid_m.storage_manager.set_value(invalid_pmid_in_db["identifier"], False)
         validated_as_True = opp_redis.validated_as(valid_pmid_in_db)
         validated_as_False = opp_redis.validated_as(invalid_pmid_in_db)
         not_validated = opp_redis.validated_as(valid_pmid_not_in_db)
@@ -253,7 +237,7 @@ class TestOpenaireProcessing(unittest.TestCase):
         self.assertEqual(validated_as_True, True)
         self.assertEqual(validated_as_False, False)
         self.assertEqual(not_validated, None)
-        opp_redis.storage_manager.delete_storage()
+        opp_redis.pmid_m.storage_manager.delete_storage()
 
     def test_get_id_manager(self):
         """Check that, given in input the string of a schema (e.g.:'pmid') or an id with a prefix (e.g.: 'pmid:12334')
@@ -308,7 +292,7 @@ class TestOpenaireProcessing(unittest.TestCase):
         id manager. Note that each instance of the Preprocessing class needs its own instances of the id managers,
         in order to avoid conflicts while validating data"""
 
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
+        op = OpenaireProcessing(testing=True)
         id_man_dict = op._id_man_dict
 
         pmid_id = "pmid:12345"
@@ -372,7 +356,7 @@ class TestOpenaireProcessing(unittest.TestCase):
         '''
         Check that, given an id with a prefix, any doi, pmid, pmcid and arxiv id is correctly normalised
         '''
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
+        op = OpenaireProcessing(testing=True)
 
         pmid_id = "pmid:12345"
         doi_id = "doi:10.1103/physrevd.84.084046"
@@ -432,7 +416,7 @@ class TestOpenaireProcessing(unittest.TestCase):
         of the same list, containing only the normalised version of the ids of the schemas managed by opencitations.
         Each reduced dictionary only contains two key-value pairs, i.e.: "identifier" and "schema".
         '''
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
+        op = OpenaireProcessing(testing=True)
 
         list_of_ids_to_norm_with_duplicates = [
             {'identifier': '10.1103/PHYSREVD.84.084046', 'schema': 'doi',
@@ -511,7 +495,7 @@ class TestOpenaireProcessing(unittest.TestCase):
         table for the entity is created
         '''
 
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
+        op = OpenaireProcessing(testing=True)
         csv_row = op.csv_creator(SAMPLE_ENTITY_FOR_CSV_CREATOR)
         expected_row = {
             'id': 'pmid:29890726',
@@ -554,7 +538,7 @@ class TestOpenaireProcessing(unittest.TestCase):
         no meta csv rows are created.
         '''
 
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
+        op = OpenaireProcessing(testing=True)
 
         replaced_entity = {'schema': 'handle', 'identifier': 'handle:11245/1.357137', 'valid': None}
         MODIFIED_ENTITY = {k:v for k,v in SAMPLE_ENTITY_FOR_CSV_CREATOR.items()}
@@ -591,7 +575,7 @@ class TestOpenaireProcessing(unittest.TestCase):
         no meta csv rows are created.
         '''
 
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
+        op = OpenaireProcessing(testing=True)
 
         replaced_entity = {'schema': 'doi', 'identifier': 'doi:10.1000/FAKE_ID', 'valid': None}
         MODIFIED_ENTITY = {k: v for k, v in SAMPLE_ENTITY_FOR_CSV_CREATOR.items()}
@@ -636,7 +620,7 @@ class TestOpenaireProcessing(unittest.TestCase):
 
         Base functionalities: No publisher mapping in input -> only Publisher name retrieved from the datasource dump
         '''
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
+        op = OpenaireProcessing(testing=True)
         no_doi_pub_input = {'name': 'Blackwell Publishing Ltd'}
 
         doi_pub_1_input = {'name': 'Frontiers Media SA'}
@@ -699,7 +683,7 @@ class TestOpenaireProcessing(unittest.TestCase):
          -the name of the publisher provided by the datasource corresponds to the from the datasource dump
         '''
 
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True),publishers_filepath_openaire="test/openaire_processing/support_material/publishers.json")
+        op = OpenaireProcessing(testing=True,publishers_filepath_openaire="test/openaire_processing/support_material/publishers.json")
 
         no_doi_pub_input = {'name': 'Blackwell Publishing Ltd'}
 
@@ -802,7 +786,7 @@ class TestOpenaireProcessing(unittest.TestCase):
          -the name of the publisher provided by the datasource corresponds to the from the datasource dump
         '''
 
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True), publishers_filepath_openaire="test/openaire_processing/support_material/publishers.json")
+        op = OpenaireProcessing(testing=True, publishers_filepath_openaire="test/openaire_processing/support_material/publishers.json")
 
         # CASE 1: The Publisher Name provided by OPENAIRE corresponds to the Publisher Name mapped to one of the
         # entity's dois prefixes in the prefix-to-publisher-data mapping in input
@@ -906,7 +890,7 @@ class TestOpenaireProcessing(unittest.TestCase):
         sample_arxiv_no_ver = [{'schema': 'arxiv', 'identifier': 'arxiv:1509.08217', 'valid': None}]
         sample_arxiv_ver = [{'schema': 'arxiv', 'identifier': 'arxiv:1509...08217v3', 'valid': None}]
 
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
+        op = OpenaireProcessing(testing=True)
 
         # CASE 1: the unique input id dict in list is a not-arxiv doi : the input list is returned
         out_sample_doi_any = op.manage_arxiv_single_id(sample_doi_any)
@@ -1015,7 +999,7 @@ class TestOpenaireProcessing(unittest.TestCase):
         op.storage_manager.delete_storage()
 
     def test_manage_doi_prefixes_priorities_redis(self):
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
+        op = OpenaireProcessing(testing=True)
 
         # CASE1: 1 figshare doi (priority 1) with version --> returned as it is
         es_1 = [{'schema': 'doi', 'identifier': 'doi:10.6084/1234.1234v3', 'valid': None}]
@@ -1272,7 +1256,7 @@ class TestOpenaireProcessing(unittest.TestCase):
         # storage only at the end; 2) create a new OpenaireProcessing instance at every check and
         # delete the storage each time after the check is done.
 
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
+        op = OpenaireProcessing(testing=True)
         # CASE1_1: No already validated ids + 1 id to be validated, which is valid
         inp_1 =  {'valid': [], 'not_valid': [], 'to_be_val': [{'schema': 'pmid', 'identifier': 'pmid:20662931', 'valid': None}]}
         out_1 = op.to_validated_id_list(inp_1)
@@ -1280,7 +1264,7 @@ class TestOpenaireProcessing(unittest.TestCase):
         self.assertEqual(out_1, exp_1)
         op.storage_manager.delete_storage()
 
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
+        op = OpenaireProcessing(testing=True)
         # CASE1_2: No already validated ids + 1 id to be validated, which is invalid
         inp_2 =  {'valid': [], 'not_valid': [], 'to_be_val': [{'schema': 'pmid', 'identifier': 'pmid:999920662931', 'valid': None}]}
         out_2 = op.to_validated_id_list(inp_2)
@@ -1288,7 +1272,7 @@ class TestOpenaireProcessing(unittest.TestCase):
         self.assertEqual(out_2, exp_2)
         op.storage_manager.delete_storage()
 
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
+        op = OpenaireProcessing(testing=True)
         # CASE1_3: No already validated ids + 1 id to be validated, which is a valid arxiv doi
         inp_3 =  {'valid': [], 'not_valid': [], 'to_be_val': [{'schema': 'doi', 'identifier': 'doi:10.48550/arXiv.1509.08217', 'valid': None}]}
         out_3 = op.to_validated_id_list(inp_3)
@@ -1296,7 +1280,7 @@ class TestOpenaireProcessing(unittest.TestCase):
         self.assertEqual(out_3, exp_3)
         op.storage_manager.delete_storage()
 
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
+        op = OpenaireProcessing(testing=True)
         # CASE1_4: No already validated ids + 1 id to be validated, which hasn't a valid schema
         inp_4 =  {'valid': [], 'not_valid': [], 'to_be_val': [{'schema': "0", 'identifier': 'doi:10.48550/arXiv.1509.08217', 'valid': None}]}
         out_4 = op.to_validated_id_list(inp_4)
@@ -1304,7 +1288,7 @@ class TestOpenaireProcessing(unittest.TestCase):
         self.assertEqual(out_4, exp_4)
         op.storage_manager.delete_storage()
 
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
+        op = OpenaireProcessing(testing=True)
         # CASE1_5: No already validated ids + 1 id to be validated, which is not valid
         inp_5 =  {'valid': [], 'not_valid': [], 'to_be_val': [{'schema': "doi", 'identifier': 'doi:10.0000/fake_id', 'valid': None}]}
         out_5 = op.to_validated_id_list(inp_5)
@@ -1312,7 +1296,7 @@ class TestOpenaireProcessing(unittest.TestCase):
         self.assertEqual(out_5, exp_5)
         op.storage_manager.delete_storage()
 
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
+        op = OpenaireProcessing(testing=True)
         # CASE1_9: No already validated ids + 1 id to be validated, which is a valid PMC
         inp_9 =  {'valid': [], 'not_valid': [], 'to_be_val': [{'schema': "pmcid", 'identifier': 'pmcid:PMC2873764', 'valid': None}]}
         out_9 = op.to_validated_id_list(inp_9)
@@ -1320,7 +1304,7 @@ class TestOpenaireProcessing(unittest.TestCase):
         self.assertEqual(out_9, exp_9)
         op.storage_manager.delete_storage()
 
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
+        op = OpenaireProcessing(testing=True)
         # CASE2_1: No already validated ids + >1 id to be validated, both valid and with accepted schemas
         inp_6 =  {'valid': [], 'not_valid': [], 'to_be_val': [{'schema': 'pmid', 'identifier': 'pmid:20662931', 'valid': None},
                                                               {'schema': 'doi', 'identifier': 'doi:10.1007/s12160-011-9282-0', 'valid': None}]}
@@ -1329,7 +1313,7 @@ class TestOpenaireProcessing(unittest.TestCase):
         self.assertCountEqual(out_6, exp_6) #Test that sequence first contains the same elements as second, regardless of their order
         op.storage_manager.delete_storage()
 
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
+        op = OpenaireProcessing(testing=True)
         # CASE2_2: No already validated ids + >1 id to be validated, both valid, one of the two is an arxiv id
         inp_8 =  {'valid': [], 'not_valid': [], 'to_be_val': [{'schema': 'pmid', 'identifier': 'pmid:20662931', 'valid': None},
                                                               {'schema': 'arxiv', 'identifier': 'arxiv:1107.5979', 'valid': None}]}
@@ -1338,7 +1322,7 @@ class TestOpenaireProcessing(unittest.TestCase):
         self.assertEqual(out_8, exp_8)
         op.storage_manager.delete_storage()
 
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
+        op = OpenaireProcessing(testing=True)
         # CASE2_3: No already validated ids + >1 id to be validated, both valid, one of the two is an arxiv doi
         inp_7 =  {'valid': [], 'not_valid': [], 'to_be_val': [{'schema': 'pmid', 'identifier': 'pmid:20662931', 'valid': None}, {'schema': "doi", 'identifier': 'doi:10.48550/arXiv.1509.08217', 'valid': None}]}
         out_7 = op.to_validated_id_list(inp_7)
@@ -1346,7 +1330,7 @@ class TestOpenaireProcessing(unittest.TestCase):
         self.assertEqual(out_7, exp_7)
         op.storage_manager.delete_storage()
 
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
+        op = OpenaireProcessing(testing=True)
         # CASE2_4: No already validated ids + >1 id to be validated, both valid, one of the two is a PMC
         inp_10 =  {'valid': [], 'not_valid': [], 'to_be_val': [{'schema': 'pmid', 'identifier': 'pmid:20662931', 'valid': None},
                                                               {'schema': "pmcid", 'identifier': 'pmcid:PMC2873764', 'valid': None}]}
@@ -1355,7 +1339,7 @@ class TestOpenaireProcessing(unittest.TestCase):
         self.assertEqual(out_10, exp_10)
         op.storage_manager.delete_storage()
 
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
+        op = OpenaireProcessing(testing=True)
         # CASE2_5: No already validated ids + >1 id to be validated, 1 valid pmid, 1 valid doi, 1 valid doi with a "critic" prefix
         # for opencitations entities management
 
@@ -1370,7 +1354,7 @@ class TestOpenaireProcessing(unittest.TestCase):
         self.assertCountEqual(out_11, exp_11) #Test that sequence first contains the same elements as second, regardless of their order
         op.storage_manager.delete_storage()
 
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
+        op = OpenaireProcessing(testing=True)
         # CASE2_6: No already validated ids + >1 id to be validated, one doi with a "critic" prefix and a PMCID
         # for opencitations entities management
 
@@ -1384,7 +1368,7 @@ class TestOpenaireProcessing(unittest.TestCase):
         self.assertEqual(out_12, exp_12)
         op.storage_manager.delete_storage()
 
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
+        op = OpenaireProcessing(testing=True)
         # CASE2_7: no already validated ids + >1 id to be validated, one doi with a "critic" prefix for opencitations
         # ingestion workflow and an ARXIV
 
@@ -1397,7 +1381,7 @@ class TestOpenaireProcessing(unittest.TestCase):
         self.assertEqual(out_13, exp_13)
         op.storage_manager.delete_storage()
 
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
+        op = OpenaireProcessing(testing=True)
         # CASE2_8: no already validated ids and more dois with "critic" prefixes for opencitations
         # ingestion workflow
 
@@ -1410,7 +1394,7 @@ class TestOpenaireProcessing(unittest.TestCase):
         self.assertEqual(out_14, exp_14)
         op.storage_manager.delete_storage()
 
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
+        op = OpenaireProcessing(testing=True)
         # CASE3: an already validated id and more dois with "critic" prefixes for opencitations
         # ingestion workflow
 
@@ -1436,7 +1420,7 @@ class TestOpenaireProcessing(unittest.TestCase):
 
 
     def test_add_authors_to_agent_list_redis(self):
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
+        op = OpenaireProcessing(testing=True)
         sample_inp = {'creator': [{'name': 'Carlos Hoyos'}, {'name': 'Yaron Oz'}, {'identifiers': [{'identifier': '0000-0001-6946-5074', 'schema': 'ORCID', 'url': 'https://orcid.org/0000-0001-6946-5074'}], 'name': 'Bom Soo Kim'}]}
         sample_exp = op.add_authors_to_agent_list(sample_inp, [])
         sample_out = [{'role': 'author', 'name': 'Carlos Hoyos', 'family': '', 'given': ''}, {'role': 'author', 'name': 'Yaron Oz', 'family': '', 'given': ''}, {'role': 'author', 'name': 'Bom Soo Kim', 'family': '', 'given': '', 'orcid': 'orcid:0000-0001-6946-5074'}]
@@ -1453,7 +1437,7 @@ class TestOpenaireProcessing(unittest.TestCase):
 
 
     def test_add_authors_to_agent_list_no_creator_redis(self):
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
+        op = OpenaireProcessing(testing=True)
         sample_inp = {'creator': []}
         sample_exp = op.add_authors_to_agent_list(sample_inp, [])
         sample_out = []
@@ -1471,13 +1455,13 @@ class TestOpenaireProcessing(unittest.TestCase):
     def test_get_agents_strings_list_redis(self):
         best_doi = "doi:10.1007/jhep03(2014)050"
         agents_list_2 = [{'role': 'author', 'name': 'Hoyos, Carlos', 'family': '', 'given': ''}, {'role': 'author', 'name': 'Oz, Yaron', 'family': '', 'given': ''}, {'role': 'author', 'name': 'Kim, Bom Soo', 'family': '', 'given': '', 'orcid': 'orcid:0000-0001-6946-5074'}]
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
+        op = OpenaireProcessing(testing=True)
         sample_exp = op.get_agents_strings_list(best_doi, agents_list_2)
         self.assertEqual(sample_exp, (['Hoyos Carlos', 'Oz Yaron', 'Kim Bom Soo [orcid:0000-0001-6946-5074]'], []))
         op.storage_manager.delete_storage()
 
     def test_find_openaire_orcid(self):
-        op = OpenaireProcessing()
+        op = OpenaireProcessing(testing=True)
         inp = [{'identifier': '0000-0001-9759-3938', 'schema': 'ORCID', 'url': 'https://orcid.org/0000-0001-9759-3938'}]
         out = op.find_openaire_orcid(inp)
         exp = "orcid:0000-0001-9759-3938"
@@ -1493,30 +1477,30 @@ class TestOpenaireProcessing(unittest.TestCase):
         exp_invalid_id = ""
         self.assertEqual(out_invalid_id, exp_invalid_id)
 
-        op.storage_manager.delete_storage()
+        op.orcid_m.storage_manager.delete_storage()
 
         # set a valid id as invalid in storage, so to check that the api check is
         # avoided if the info is already in storage
-        op = OpenaireProcessing()
-        op.storage_manager.set_value("orcid:0000-0001-9759-3938", False)
+        op = OpenaireProcessing(testing=True)
+        op.orcid_m.storage_manager.set_value("orcid:0000-0001-9759-3938", False)
 
         inp = [{'identifier': '0000-0001-9759-3938', 'schema': 'ORCID', 'url': 'https://orcid.org/0000-0001-9759-3938'}]
         out = op.find_openaire_orcid(inp)
         exp = ""
         self.assertEqual(out, exp)
 
-        op.storage_manager.delete_storage()
-        op = OpenaireProcessing()
-        op.storage_manager.set_value("orcid:0000-0001-9759-3938", True)
+        op.orcid_m.storage_manager.delete_storage()
+        op = OpenaireProcessing(testing=True)
+        op.orcid_m.storage_manager.set_value("orcid:0000-0001-9759-3938", True)
         inp = [{'identifier': '0000-0001-9759-3938', 'schema': 'ORCID', 'url': 'https://orcid.org/0000-0001-9759-3938'}]
         out = op.find_openaire_orcid(inp)
         exp = "orcid:0000-0001-9759-3938"
         self.assertEqual(out, exp)
-        op.storage_manager.delete_storage()
+        op.orcid_m.storage_manager.delete_storage()
 
 
     def test_find_openaire_orcid_redis(self):
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
+        op = OpenaireProcessing(testing=True)
         inp = [{'identifier': '0000-0001-9759-3938', 'schema': 'ORCID', 'url': 'https://orcid.org/0000-0001-9759-3938'}]
         out = op.find_openaire_orcid(inp)
         exp = "orcid:0000-0001-9759-3938"
@@ -1532,89 +1516,35 @@ class TestOpenaireProcessing(unittest.TestCase):
         exp_invalid_id = ""
         self.assertEqual(out_invalid_id, exp_invalid_id)
 
-        op.storage_manager.delete_storage()
+        op.orcid_m.storage_manager.delete_storage()
 
         # set a valid id as invalid in storage, so to check that the api check is
         # avoided if the info is already in storage
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
-        op.storage_manager.set_value("orcid:0000-0001-9759-3938", False)
+        op = OpenaireProcessing(testing=True)
+        op.orcid_m.storage_manager.set_value("orcid:0000-0001-9759-3938", False)
 
         inp = [{'identifier': '0000-0001-9759-3938', 'schema': 'ORCID', 'url': 'https://orcid.org/0000-0001-9759-3938'}]
         out = op.find_openaire_orcid(inp)
         exp = ""
         self.assertEqual(out, exp)
 
-        op.storage_manager.delete_storage()
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
-        op.storage_manager.set_value("orcid:0000-0001-9759-3938", True)
+        op.orcid_m.storage_manager.delete_storage()
+        op = OpenaireProcessing(testing=True)
+        op.orcid_m.storage_manager.set_value("orcid:0000-0001-9759-3938", True)
         inp = [{'identifier': '0000-0001-9759-3938', 'schema': 'ORCID', 'url': 'https://orcid.org/0000-0001-9759-3938'}]
         out = op.find_openaire_orcid(inp)
         exp = "orcid:0000-0001-9759-3938"
         self.assertEqual(out, exp)
-        op.storage_manager.delete_storage()
+        op.orcid_m.storage_manager.delete_storage()
 
     def test_update_redis_values(self):
         br = ["pmid:2", "pmid:3"]
         ra = ["orcid:0000-0003-0530-4305"]
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=True))
+        op = OpenaireProcessing(testing=True)
         op.update_redis_values(br,ra)
         self.assertEqual(op._redis_values_br, br)
         self.assertEqual(op._redis_values_ra, ra)
 
-
-    #### REAL REDIS TESTS (SKIPPED IF REDIS IS NOT CONNECTED // REDIS DB 14 IS NOT EMPTY)
-
-    def test_get_reids_validity_list_real_redis(self):
-        function_to_execute = "test_get_reids_validity_list_real_redis"
-        try:
-            rsm = RedisStorageManager(testing=False)
-            rsm.set_value("TEST VALUE", False)
-            run_test = True
-        except:
-            run_test = False
-            print(f'test skipped: {function_to_execute}: Connect to redis before running the test')
-        if run_test:
-            rsm.del_value("TEST VALUE")
-            op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=False))
-            if not op.BR_redis.get("pmcid:PMC4005913"):
-                op.BR_redis.set("pmcid:PMC4005913", "ra/061randomra")
-            list_br = ['pmcid:PMC4005913', 'pmid:24632350', 'pmid:1581770']
-            out_list = op.get_reids_validity_list(list_br, "br")
-            exp = ['pmcid:PMC4005913']
-            self.assertEqual(exp, out_list)
-            op.BR_redis.delete("pmcid:PMC4005913")
-            self.assertFalse(op.BR_redis.get("pmcid:PMC4005913"))
-
-    def real_redis_test_case(self, function_to_execute):
-        try:
-            rsm = RedisStorageManager(testing=False)
-            rsm.set_value("TEST VALUE", False)
-            run_test = True
-        except:
-            run_test = False
-            print(f'test skipped: {function_to_execute}: Connect to redis before running the test')
-
-        if run_test:
-            rsm.del_value("TEST VALUE")
-            if not len(rsm.get_all_keys()):
-                function_to_execute()
-                rsm.delete_storage()
-
-            else:
-                # print("get_all_keys()", rsm.get_all_keys())
-                # rsm.delete_storage()
-                print(f'test skipped: {function_to_execute}: Redis db 2 is not empty')
-
-    def update_redis_values_real_redis(self):
-        br = ["pmid:2", "pmid:3"]
-        ra = ["orcid:0000-0003-0530-4305"]
-        op = OpenaireProcessing(storage_manager=RedisStorageManager(testing=False))
-        op.update_redis_values(br,ra)
-        self.assertEqual(op._redis_values_br, br)
-        self.assertEqual(op._redis_values_ra, ra)
-
-    def test_update_redis_values_real_redis(self):
-        self.real_redis_test_case(self.update_redis_values_real_redis)
 
     def test_find_openaire_orcid_with_index(self):
         """Test ORCID validation using ORCID index before API validation"""
@@ -1657,6 +1587,19 @@ class TestOpenaireProcessing(unittest.TestCase):
         # Cleanup
         op.storage_manager.delete_storage()
 
+
+def test_validated_as_with_storage_manager(storage_manager):
+    valid_doi_not_in_db = {"identifier": "doi:10.1001/2012.jama.10158", "schema": "doi"}
+    valid_doi_in_db = {"identifier": "doi:10.1001/2012.jama.10368", "schema": "doi"}
+    invalid_doi_in_db = {"identifier": "doi:10.1001/2012.jama.1036", "schema": "doi"}
+
+    op_processing = OpenaireProcessing(storage_manager=storage_manager, testing=True)
+    op_processing.doi_m.storage_manager.set_value(valid_doi_in_db["identifier"], True)
+    op_processing.doi_m.storage_manager.set_value(invalid_doi_in_db["identifier"], False)
+
+    assert op_processing.validated_as(valid_doi_in_db) is True
+    assert op_processing.validated_as(invalid_doi_in_db) is False
+    assert op_processing.validated_as(valid_doi_not_in_db) is None
 
 
 if __name__ == '__main__':

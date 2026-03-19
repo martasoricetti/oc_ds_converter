@@ -5,17 +5,15 @@ import pathlib
 import re
 import warnings
 from os.path import exists
-from typing import Dict, List, Tuple
+from typing import List, Tuple
 
-import fakeredis
 from bs4 import BeautifulSoup
+
+from oc_ds_converter.datasource.redis import FakeRedisWrapper, RedisDataSource
+from oc_ds_converter.lib.cleaner import Cleaner
 from oc_ds_converter.oc_idmanager.doi import DOIManager
 from oc_ds_converter.oc_idmanager.orcid import ORCIDManager
 from oc_ds_converter.oc_idmanager.pmid import PMIDManager
-from oc_ds_converter.lib.cleaner import Cleaner
-from oc_ds_converter.lib.master_of_regex import *
-
-from oc_ds_converter.datasource.redis import RedisDataSource
 from oc_ds_converter.pubmed.finder_nih import NIHResourceFinder
 from oc_ds_converter.pubmed.get_publishers import ExtractPublisherDOI
 from oc_ds_converter.ra_processor import RaProcessor
@@ -24,15 +22,15 @@ warnings.filterwarnings("ignore", category=UserWarning, module='bs4')
 
 
 class PubmedProcessing(RaProcessor):
-    def __init__(self, orcid_index: str = None, doi_csv: str = None, publishers_filepath_pubmed: str = None, journals_filepath: str = None, testing:bool = True):
-        super(PubmedProcessing, self).__init__(orcid_index, doi_csv)
+    def __init__(self, orcid_index: str | None = None, publishers_filepath_pubmed: str | None = None, journals_filepath: str | None = None, testing: bool = True, exclude_existing: bool = False):
+        super().__init__(orcid_index)
+        self.exclude_existing = exclude_existing
         self.nihrf = NIHResourceFinder()
         self.doi_m = DOIManager()
         self.pmid_m = PMIDManager()
         if testing:
-            self.BR_redis= fakeredis.FakeStrictRedis()
-            self.RA_redis= fakeredis.FakeStrictRedis()
-
+            self.BR_redis = FakeRedisWrapper()
+            self.RA_redis = FakeRedisWrapper()
         else:
             self.BR_redis = RedisDataSource("DB-META-BR")
             self.RA_redis = RedisDataSource("DB-META-RA")
@@ -95,7 +93,7 @@ class PubmedProcessing(RaProcessor):
         row = dict()
         doi = ""
         pmid = self.pmid_m.normalise(str(item['pmid']))
-        if (pmid and self.doi_set and pmid in self.doi_set) or (pmid and not self.doi_set):
+        if pmid:
             # create empty row
             keys = ['id', 'title', 'author', 'pub_date', 'venue', 'volume', 'issue', 'page', 'type',
                     'publisher', 'editor']
@@ -114,7 +112,7 @@ class PubmedProcessing(RaProcessor):
                 doi = DOIManager().normalise(attributes.get('doi'), include_prefix=False)
                 if doi:
                     doi_w_pref = "doi:"+doi
-                    if self.BR_redis.get(doi_w_pref):
+                    if self.BR_redis.exists_as_set(doi_w_pref):
                         ids_list.append(doi_w_pref)
                     elif self.doi_m.is_valid(doi):
                         ids_list.append(doi_w_pref)
@@ -288,7 +286,6 @@ class PubmedProcessing(RaProcessor):
         '''
         agent_list = ag_list
         if item.get("authors"):
-            multi_space = re.compile(r"\s+")
             authors_string = str(item.get("authors")).strip()
             authors_split_list = [a.strip() for a in authors_string.split(",") if a]
             for author in authors_split_list:
@@ -627,7 +624,7 @@ class PubmedProcessing(RaProcessor):
             try:
                 int_pmid = int(citing)
                 citing = "pmid:" + str(int_pmid)
-            except:
+            except ValueError:
                 return []
 
         references_string = item.get("references")
@@ -642,7 +639,7 @@ class PubmedProcessing(RaProcessor):
 
                     if norm_cited:
                         addressed_citations.add((citing, norm_cited))
-            except:
+            except ValueError:
                 pass
 
         addressed_citations_list = list(addressed_citations)

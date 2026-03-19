@@ -24,27 +24,25 @@ from oc_ds_converter.oc_idmanager import *
 from oc_ds_converter.oc_idmanager.base import IdentifierManager
 from requests import ReadTimeout, get
 from requests.exceptions import ConnectionError
+from oc_ds_converter.oc_idmanager.oc_data_storage.redis_manager import RedisStorageManager
 from oc_ds_converter.oc_idmanager.oc_data_storage.storage_manager import StorageManager
-from oc_ds_converter.oc_idmanager.oc_data_storage.in_memory_manager import InMemoryStorageManager
-#from oc_ds_converter.oc_idmanager.oc_data_storage.sqlite_manager import SqliteStorageManager
-from typing import Optional, Type, Callable
 
 
 class ArXivManager(IdentifierManager):
     """This class implements an identifier manager for arxiv identifier"""
 
-    def __init__(self, use_api_service=True, storage_manager:Optional[StorageManager] = None):
+    def __init__(self, use_api_service: bool = True, storage_manager: StorageManager | None = None, testing: bool = True) -> None:
         """arxiv manager constructor."""
         super(ArXivManager,self).__init__()
         self._use_api_service = use_api_service
         if storage_manager is None:
-            self.storage_manager = InMemoryStorageManager()
+            self.storage_manager = RedisStorageManager(testing=testing)
         else:
             self.storage_manager = storage_manager
 
         self._p = "arxiv:"
-        self._api = f'https://export.arxiv.org/api/query?search_query=all:'
-        self._api_v = f'https://arxiv.org/abs/'
+        self._api = 'https://export.arxiv.org/api/query?search_query=all:'
+        self._api_v = 'https://arxiv.org/abs/'
         self._headers = {
             "User-Agent": "Identifier Manager / OpenCitations Indexes "
                           "(http://opencitations.net; mailto:contact@opencitations.net)"
@@ -121,13 +119,13 @@ class ArXivManager(IdentifierManager):
 
             try:
                 id_string = unquote(id_string)
-                arxiv_string = search("(\d{4}.\d{4,5}|[a-z\-]+(\.[A-Z]{2})?\/\d{7})(v\d+)", id_string).group(0)
+                arxiv_string = search(r"(\d{4}.\d{4,5}|[a-z\-]+(\.[A-Z]{2})?\/\d{7})(v\d+)", id_string).group(0)
 
                 return "%s%s" % (self._p if include_prefix else "", arxiv_string)
             except:
                 try:
                     id_string = unquote(id_string)
-                    arxiv_string = search("(\d{4}.\d{4,5}|[a-z\-]+(\.[A-Z]{2})?\/\d{7})(v\d+)?", id_string).group(0)
+                    arxiv_string = search(r"(\d{4}.\d{4,5}|[a-z\-]+(\.[A-Z]{2})?\/\d{7})(v\d+)?", id_string).group(0)
                     return "%s%s" % (self._p if include_prefix else "", arxiv_string+"v1")
                 except:
                     return None
@@ -138,7 +136,7 @@ class ArXivManager(IdentifierManager):
     def syntax_ok(self, id_string):
         if not id_string.startswith(self._p):
             id_string = self._p + id_string
-        return True if match("arxiv:(\d{4}.\d{4,5}|[a-z\-]+(\.[A-Z]{2})?\/\d{7})(v\d+)?$", id_string) else False
+        return True if match(r"arxiv:(\d{4}.\d{4,5}|[a-z\-]+(\.[A-Z]{2})?\/\d{7})(v\d+)?$", id_string) else False
 
 
     def exists(self, arxiv_full, get_extra_info=False, allow_extra_api=None):

@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 # Copyright 2019-2020 Fabio Mariani <fabio.mariani555@gmail.com>
-# Copyright 2021-2022 Arcangelo Massari <arcangelo.massari@unibo.it>
+# Copyright 2021-2026 Arcangelo Massari <arcangelo.massari@unibo.it>
 # Copyright 2023-2025 Arianna Moretti <arianna.moretti4@unibo.it>
 #
 # Permission to use, copy, modify, and/or distribute this software for any purpose
@@ -16,284 +16,172 @@
 # ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS
 # SOFTWARE.
 
+from __future__ import annotations
 
-import html
 import re
-import warnings
-from pathlib import Path
-from typing import Optional
-import os
-import os.path
-import json
-import csv
-
-from bs4 import BeautifulSoup
-from oc_ds_converter.oc_idmanager import DOIManager
-from oc_ds_converter.oc_idmanager import ORCIDManager
-from oc_ds_converter.oc_idmanager import ISSNManager
-
-from oc_ds_converter.lib.master_of_regex import *
-import fakeredis
-from oc_ds_converter.datasource.redis import RedisDataSource
-from oc_ds_converter.ra_processor import RaProcessor
-from oc_ds_converter.oc_idmanager.oc_data_storage.storage_manager import StorageManager
-from oc_ds_converter.oc_idmanager.oc_data_storage.in_memory_manager import InMemoryStorageManager
-from oc_ds_converter.oc_idmanager.oc_data_storage.sqlite_manager import SqliteStorageManager
-from typing import Dict, List, Tuple
-from oc_ds_converter.lib.cleaner import Cleaner
 from collections import defaultdict
+from typing import List, Optional, Tuple
+
+from oc_ds_converter.lib.cleaner import Cleaner
+from oc_ds_converter.lib.crossref_style_processing import CrossrefStyleProcessing
+from oc_ds_converter.lib.master_of_regex import ids_inside_square_brackets, pages_separator
+from oc_ds_converter.oc_idmanager.oc_data_storage.storage_manager import StorageManager
 
 
+class CrossrefProcessing(CrossrefStyleProcessing):
 
-warnings.filterwarnings("ignore", category=UserWarning, module='bs4')
+    def __init__(
+        self,
+        orcid_index: str | None = None,
+        publishers_filepath: str | None = None,
+        storage_manager: StorageManager | None = None,
+        testing: bool = True,
+        citing: bool = True,
+        use_orcid_api: bool = True,
+        use_redis_orcid_index: bool = False,
+        use_redis_publishers: bool = False,
+        exclude_existing: bool = False,
+    ):
+        super().__init__(
+            orcid_index=orcid_index,
+            publishers_filepath=publishers_filepath,
+            storage_manager=storage_manager,
+            testing=testing,
+            citing=citing,
+            use_redis_orcid_index=use_redis_orcid_index,
+            use_orcid_api=use_orcid_api,
+            use_redis_publishers=use_redis_publishers,
+        )
+        self.exclude_existing = exclude_existing
 
-class CrossrefProcessing(RaProcessor):
+    def _extract_doi(self, item: dict) -> str:
+        doi = item.get('DOI', '')
+        if isinstance(doi, list):
+            doi = doi[0] if doi else ''
+        return str(doi)
 
-    def __init__(self, orcid_index:str=None, doi_csv:str=None, publishers_filepath:str=None, testing: bool = True, storage_manager: Optional[StorageManager] = None, citing: bool = True, use_orcid_api: bool = True):
-        super(CrossrefProcessing, self).__init__(orcid_index, doi_csv, publishers_filepath)
-        self.citing = citing
-        self.use_orcid_api = use_orcid_api
+    def _extract_title(self, item: dict) -> str:
+        title = item.get('title')
+        if not title:
+            return ''
+        if isinstance(title, list):
+            title = title[0] if title else ''
+        return self.clean_markup(str(title))
 
-        if storage_manager is None:
-            self.storage_manager = SqliteStorageManager()
-        else:
-            self.storage_manager = storage_manager
+    def _extract_agents(self, item: dict) -> list[dict]:
+        agents_list: list[dict] = []
+        if 'author' in item:
+            for author in item['author']:
+                agents_list.append({**author, 'role': 'author'})
+        if 'editor' in item:
+            for editor in item['editor']:
+                agents_list.append({**editor, 'role': 'editor'})
+        return agents_list
 
-        self.temporary_manager = InMemoryStorageManager('../memory.json')
+    def _extract_venue(self, item: dict) -> str:
+        item_type = self._extract_type(item)
+        return self.get_venue_name(item, {'type': item_type})
 
-        self.doi_m = DOIManager(storage_manager=self.storage_manager)
-        self.orcid_m = ORCIDManager(storage_manager=self.storage_manager, use_api_service=use_orcid_api)
-        self.issn_m = ISSNManager()
+    def _extract_pub_date(self, item: dict) -> str:
+        if 'issued' not in item:
+            return ''
+        date_parts = item['issued'].get('date-parts', [[]])
+        if date_parts and date_parts[0] and date_parts[0][0]:
+            return '-'.join([str(y) for y in date_parts[0]])
+        return ''
 
-        self.venue_id_man_dict = {"issn": self.issn_m}
-        # Temporary storage managers
-        self.tmp_doi_m = DOIManager(storage_manager=self.temporary_manager)
-        self.tmp_orcid_m = ORCIDManager(storage_manager=self.temporary_manager, use_api_service=use_orcid_api)
+    def _extract_pages(self, item: dict) -> str:
+        if 'page' not in item:
+            return ''
+        pages_list = re.split(pages_separator, item['page'])
+        return self.get_pages(pages_list)
 
-        self.venue_tmp_id_man_dict = {"issn": self.issn_m}
+    def _extract_type(self, item: dict) -> str:
+        item_type = item.get('type', '')
+        if item_type:
+            return item_type.replace('-', ' ')
+        return ''
 
-        if testing:
-            self.BR_redis = fakeredis.FakeStrictRedis()
-            self.RA_redis= fakeredis.FakeStrictRedis()
-        else:
-            self.BR_redis = RedisDataSource("DB-META-BR")
-            self.RA_redis = RedisDataSource("DB-META-RA")
+    def _extract_publisher(self, item: dict) -> str:
+        doi = self._extract_doi(item)
+        if not doi:
+            return ''
+        norm_doi = self.doi_m.normalise(doi, include_prefix=False)
+        if not norm_doi:
+            return ''
+        return self.get_publisher_name(norm_doi, item)
 
-        self._redis_values_br = []
-        self._redis_values_ra = []
+    def csv_creator(self, item: dict) -> dict:
+        doi = self._extract_doi(item)
+        if not doi:
+            return {}
 
-    def update_redis_values(self, br, ra):
-        # normalizza e filtra valori validi CON prefisso
-        self._redis_values_br = [
-            x for x in (
-                self.doi_m.normalise(b, include_prefix=True) for b in (br or [])
-            ) if x
-        ]
-        self._redis_values_ra = [
-            x for x in (
-                self.orcid_m.normalise(r, include_prefix=True) for r in (ra or [])
-            ) if x
-        ]
+        norm_doi = self.doi_m.normalise(doi, include_prefix=False)
+        if not norm_doi:
+            return {}
 
-    def to_validated_id_list(self, norm_id_dict):
-        valid_id_list = []
-        norm_id = norm_id_dict.get("id")
-        schema = norm_id_dict.get("schema")
+        item_type = self._extract_type(item)
 
-        if schema == "doi":
-            if norm_id in self._redis_values_br:
-                self.tmp_doi_m.storage_manager.set_value(norm_id, True)
-                valid_id_list.append(norm_id)
-            elif self.tmp_doi_m.is_valid(norm_id):
-                valid_id_list.append(norm_id)
-
-        elif schema == "orcid":
-            if norm_id in self._redis_values_ra:
-                self.tmp_orcid_m.storage_manager.set_value(norm_id, True)
-                valid_id_list.append(norm_id)
-            elif not self.use_orcid_api:
-                # OFFLINE: non tenta validazione via rete
-                pass
-            elif self.tmp_orcid_m.is_valid(norm_id):
-                valid_id_list.append(norm_id)
-
-        else:
-            print("Schema not accepted:", schema, "in", norm_id_dict, ". Use 'orcid' or 'doi'.")
-
-        return valid_id_list
-
-    def memory_to_storage(self):
-        kv_in_memory = self.temporary_manager.get_validity_list_of_tuples()
-        if kv_in_memory:
-            self.storage_manager.set_multi_value(kv_in_memory)
-        # come con Datacite svuota sempre la memoria temporanea
-        self.temporary_manager.delete_storage()
-
-
-    def validated_as(self, id_dict):
-        schema = id_dict["schema"].strip().lower()
-        identifier = id_dict["identifier"]
-
-        if schema == "orcid":
-            validity_value = self.tmp_orcid_m.validated_as_id(identifier)
-            if validity_value is None:
-                validity_value = self.orcid_m.validated_as_id(identifier)
-            return validity_value
-
-        elif schema == "doi":
-            validity_value = self.tmp_doi_m.validated_as_id(identifier)
-            if validity_value is None:
-                validity_value = self.doi_m.validated_as_id(identifier)
-            return validity_value
-        else:
-            print("invalid schema in ", id_dict, ". schema should be either doi or orcid.")
-            return None
-
-
-    def get_id_manager(self, schema_or_id, id_man_dict):
-        if ":" in schema_or_id:
-            split_id_prefix = schema_or_id.split(":")
-            schema = split_id_prefix[0]
-        else:
-            schema = schema_or_id
-        id_man = id_man_dict.get(schema)
-        return id_man
-
-
-    def dict_to_cache(self, dict_to_be_saved, path):
-        path = Path(path)
-        parent_dir_path = path.parent.absolute()
-        if not os.path.exists(parent_dir_path):
-            Path(parent_dir_path).mkdir(parents=True, exist_ok=True)
-        with open(path, "w", encoding="utf-8") as fd:
-            json.dump(dict_to_be_saved, fd, ensure_ascii=False, indent=4)
-
-    def csv_creator(self, item:dict) -> dict:
-        row = dict()
-        if not 'DOI' in item:
-            return row
-        doi_manager = DOIManager(use_api_service=False)
-        if isinstance(item['DOI'], list):
-            doi = doi_manager.normalise(str(item['DOI'][0]), include_prefix=False)
-        else:
-            doi = doi_manager.normalise(str(item['DOI']), include_prefix=False)
-        if (doi and self.doi_set and doi in self.doi_set) or (doi and not self.doi_set):
-            # create empty row
-            keys = ['id', 'title', 'author', 'pub_date', 'venue', 'volume', 'issue', 'page', 'type',
-                    'publisher', 'editor']
-            for k in keys:
-                row[k] = ''
-
-            if 'type' in item:
-                if item['type']:
-                    row['type'] = item['type'].replace('-', ' ')
-
-            # row['id']
-            ids_list = list()
-            ids_list.append(str('doi:' + doi))
-
-            if 'ISBN' in item:
-                if row['type'] in {'book', 'dissertation', 'edited book', 'monograph', 'reference book', 'report', 'standard'}:
-                    self.id_worker(item['ISBN'], ids_list, self.isbn_worker)
-
-            if 'ISSN' in item:
-                if row['type'] in {'book series', 'book set', 'journal', 'proceedings series', 'series', 'standard series'}:
+        # Build ID (DOI + optional ISBN/ISSN based on type)
+        ids_list = [f'doi:{norm_doi}']
+        if 'ISBN' in item:
+            if item_type in {'book', 'dissertation', 'edited book', 'monograph', 'reference book', 'report', 'standard'}:
+                self.id_worker(item['ISBN'], ids_list, self.isbn_worker)
+        if 'ISSN' in item:
+            if item_type in {'book series', 'book set', 'journal', 'proceedings series', 'series', 'standard series'}:
+                self.id_worker(item['ISSN'], ids_list, self.issn_worker)
+            elif item_type == 'report series':
+                if not item.get('container-title'):
                     self.id_worker(item['ISSN'], ids_list, self.issn_worker)
-                elif row['type'] == 'report series':
-                    br_id = True
-                    if 'container-title' in item:
-                        if item['container-title']:
-                            br_id = False
-                    if br_id:
-                        self.id_worker(item['ISSN'], ids_list, self.issn_worker)
-            row['id'] = ' '.join(ids_list)
 
-            # row['title']
-            if 'title' in item:
-                if item['title']:
-                    if isinstance(item['title'], list):
-                        text_title = item['title'][0]
-                    else:
-                        text_title = item['title']
-                    soup = BeautifulSoup(text_title, 'html.parser')
-                    title_soup = soup.get_text().replace('\n', '')
-                    title = html.unescape(title_soup)
-                    row['title'] = title
+        agents_list = self._extract_agents(item)
+        authors_strings_list, editors_string_list = self.get_agents_strings_list(norm_doi, agents_list)
 
-            agents_list = []
-            if 'author' in item:
-                for author in item['author']:
-                    author['role'] = 'author'
-                agents_list.extend(item['author'])
-            if 'editor' in item:
-                for editor in item['editor']:
-                    editor['role'] = 'editor'
-                agents_list.extend(item['editor'])
-            authors_strings_list, editors_string_list = self.get_agents_strings_list(doi, agents_list)
-
-            # row['author']
-            if 'author' in item:
-                row['author'] = '; '.join(authors_strings_list)
-
-            # row['pub_date']
-            if 'issued' in item:
-                if item['issued']['date-parts'][0][0]:
-                    row['pub_date'] = '-'.join([str(y) for y in item['issued']['date-parts'][0]])
-                else:
-                    row['pub_date'] = ''
-
-            # row['venue']
-            row['venue'] = self.get_venue_name(item, row)
-
-            if 'volume' in item:
-                row['volume'] = item['volume']
-            if 'issue' in item:
-                row['issue'] = item['issue']
-            if 'page' in item:
-                row['page'] = self.get_crossref_pages(item)
-
-            row['publisher'] = self.get_publisher_name(doi, item)
-
-            if 'editor' in item:
-                row['editor'] = '; '.join(editors_string_list)
+        row = {
+            'id': ' '.join(ids_list),
+            'title': self._extract_title(item),
+            'author': '; '.join(authors_strings_list),
+            'issue': self._extract_issue(item),
+            'volume': self._extract_volume(item),
+            'venue': self._extract_venue(item),
+            'pub_date': self._extract_pub_date(item),
+            'page': self._extract_pages(item),
+            'type': item_type,
+            'publisher': self._extract_publisher(item),
+            'editor': '; '.join(editors_string_list)
+        }
         return self.normalise_unicode(row)
 
     def get_crossref_pages(self, item:dict) -> str:
         pages_list = re.split(pages_separator, item['page'])
         return self.get_pages(pages_list)
 
-    def get_publisher_name(self, doi:str, item:dict) -> str:
-        data = {
-            'publisher': '',
-            'member': None,
-            'prefix': doi.split('/')[0]
-        }
-        for field in {'publisher', 'member', 'prefix'}:
-            if field in item:
-                if item[field]:
-                    data[field] = item[field]
-        publisher = data['publisher']
-        member = data['member']
-        prefix = data['prefix']
-        relevant_member = False
+    def get_publisher_name(self, doi: str, item: dict) -> str:
+        publisher = item.get('publisher', '')
+        member = item.get('member')
+        prefix = item.get('prefix') or doi.split('/')[0]
 
-        if self.publishers_mapping and member:
-            if member in self.publishers_mapping:
-                relevant_member = True
-        if self.publishers_mapping:
-            if relevant_member:
-                name = self.publishers_mapping[member]['name']
-                name_and_id = f'{name} [crossref:{member}]'
-            else:
-                member_dict = next(({member:data} for member, data in self.publishers_mapping.items() if prefix in data['prefixes']), None)
-                if member_dict:
-                    member = list(member_dict.keys())[0]
-                    name_and_id = f"{member_dict[member]['name']} [crossref:{member}]"
-                else:
-                    name_and_id = publisher
-        else:
-            name_and_id = f'{publisher} [crossref:{member}]' if member else publisher
-        return name_and_id
+        if member:
+            name = self._get_publisher_name_by_member(str(member))
+            if name:
+                return f'{name} [crossref:{member}]'
+
+        result = self.get_publisher_by_prefix(prefix)
+        if result:
+            name, member_id = result
+            return f'{name} [crossref:{member_id}]'
+
+        return f'{publisher} [crossref:{member}]' if member else publisher
+
+    def _get_publisher_name_by_member(self, member: str) -> str | None:
+        if self.use_redis_publishers and self._publishers_redis:
+            pub_data = self._publishers_redis.get_by_member(member)
+            if pub_data:
+                return str(pub_data['name'])
+            return None
+        if self.publishers_mapping and member in self.publishers_mapping:
+            return str(self.publishers_mapping[member]['name'])
+        return None
 
 
     def get_venue_name(self, item:dict, row:dict) -> str:
@@ -301,11 +189,10 @@ class CrossrefProcessing(RaProcessor):
         if 'container-title' in item:
             if item['container-title']:
                 if isinstance(item['container-title'], list):
-                    ventit = str(item['container-title'][0]).replace('\n', '')
+                    ventit = str(item['container-title'][0])
                 else:
-                    ventit = str(item['container-title']).replace('\n', '')
-                ven_soup = BeautifulSoup(ventit, 'html.parser')
-                ventit = html.unescape(ven_soup.get_text())
+                    ventit = str(item['container-title'])
+                ventit = self.clean_markup(ventit)
                 ambiguous_brackets = re.search(ids_inside_square_brackets, ventit)
                 if ambiguous_brackets:
                     match = ambiguous_brackets.group(1)
@@ -331,12 +218,13 @@ class CrossrefProcessing(RaProcessor):
                     name_and_id = ventit
         return name_and_id
 
-    # UPDATED
-    def extract_all_ids(self, entity_dict, is_first_iteration: bool):
-        all_br = set()
-        all_ra = set()
+    def extract_all_ids(
+        self, entity_dict: dict, is_citing: bool
+    ) -> tuple[list[str], list[str]]:
+        all_br: set[str] = set()
+        all_ra: set[str] = set()
 
-        if is_first_iteration:
+        if is_citing:
             # VALIDATE RESPONSIBLE AGENTS IDS FOR THE CITING ENTITY
             if entity_dict.get("author"):
                 for author in entity_dict["author"]:
@@ -346,9 +234,9 @@ class CrossrefProcessing(RaProcessor):
                             all_ra.add(orcid)
 
             if entity_dict.get("editor"):
-                for author in entity_dict["editor"]:
-                    if "ORCID" in author:
-                        orcid = self.orcid_m.normalise(author["ORCID"], include_prefix=True)
+                for editor in entity_dict["editor"]:
+                    if "ORCID" in editor:
+                        orcid = self.orcid_m.normalise(editor["ORCID"], include_prefix=True)
                         if orcid:
                             all_ra.add(orcid)
 
@@ -360,47 +248,17 @@ class CrossrefProcessing(RaProcessor):
                 if norm_id:
                     all_br.add(norm_id)
 
-        all_br = list(all_br)
-        all_ra = list(all_ra)
-        return all_br, all_ra
-
-    def get_reids_validity_list(self, id_list, redis_db):
-        ids = list(id_list)  # garantisci ordine deterministico
-        if redis_db == "ra":
-            validity = self.RA_redis.mget(ids)
-            return [ids[i] for i, v in enumerate(validity) if v]
-        elif redis_db == "br":
-            validity = self.BR_redis.mget(ids)
-            return [ids[i] for i, v in enumerate(validity) if v]
-        else:
-            raise ValueError("redis_db must be either 'ra' or 'br'")
+        return list(all_br), list(all_ra)
 
     def get_agents_strings_list(self, doi: str, agents_list: List[dict]) -> Tuple[list, list]:
         authors_strings_list = []
         editors_string_list = []
 
-        # --- 1) DOI → prova indice in cascata (prefissato, non prefissato, raw) ---
-        norm_doi_pref = self.doi_m.normalise(doi, include_prefix=True) if doi else None
-        norm_doi_nopref = self.doi_m.normalise(doi, include_prefix=False) if doi else None
-
-        raw_index = None
-        for key in (norm_doi_pref, norm_doi_nopref, doi):
-            if not key:
-                continue
-            raw_index = self.orcid_finder(key)
-            if raw_index:
-                break  # trovato qualcosa nell'indice
+        # --- 1) DOI → lookup indice ---
+        raw_index = self.orcid_finder(doi) if doi else None
 
         # --- 2) Parser indice → lista candidati (family, given, orcid normalizzato) ---
-        def _extract_orcid(text: str) -> Optional[str]:
-            if not isinstance(text, str):
-                return None
-            m = re.search(r'(\d{4}-\d{4}-\d{4}-[0-9]{3}[0-9X])', text)
-            return f"orcid:{m.group(1)}" if m else None
-
         def _split_name(text: str) -> Tuple[str, Optional[str]]:
-            if not isinstance(text, str):
-                return "", None
             base = re.sub(r'\s*\[.*?\]\s*$', '', text).strip()
             if ',' in base:
                 fam, giv = [p.strip() for p in base.split(',', 1)]
@@ -411,7 +269,7 @@ class CrossrefProcessing(RaProcessor):
             return base, None
 
         candidates: List[Tuple[str, Optional[str], str]] = []
-        if isinstance(raw_index, dict):
+        if raw_index:
             for k, v in raw_index.items():
                 oc = k if str(k).lower().startswith("orcid:") else f"orcid:{k}"
                 oc_norm = self.orcid_m.normalise(oc, include_prefix=True)
@@ -419,23 +277,6 @@ class CrossrefProcessing(RaProcessor):
                     continue
                 fam, giv = _split_name(v)
                 candidates.append((fam.lower(), (giv or "").lower() or None, oc_norm))
-        elif isinstance(raw_index, (list, set, tuple)):
-            for v in raw_index:
-                oc = _extract_orcid(str(v))
-                if not oc:
-                    continue
-                oc_norm = self.orcid_m.normalise(oc, include_prefix=True)
-                if not oc_norm:
-                    continue
-                fam, giv = _split_name(str(v))
-                candidates.append((fam.lower(), (giv or "").lower() or None, oc_norm))
-        elif isinstance(raw_index, str):
-            oc = _extract_orcid(raw_index)
-            if oc:
-                oc_norm = self.orcid_m.normalise(oc, include_prefix=True)
-                if oc_norm:
-                    fam, giv = _split_name(raw_index)
-                    candidates.append((fam.lower(), (giv or "").lower() or None, oc_norm))
 
         # --- 3) Pulizia agenti ---
         agents_list = [
@@ -476,7 +317,6 @@ class CrossrefProcessing(RaProcessor):
             return m.group(0).lower() if m else ""
 
         # --- contatori per disambiguazione *per ruolo* (author/editor) ---
-        from collections import defaultdict
         name_counts = defaultdict(int)  # key: (role, fam_norm, given_norm)
         initial_counts = defaultdict(int)  # key: (role, fam_norm, initial)
 
@@ -531,7 +371,7 @@ class CrossrefProcessing(RaProcessor):
             # disabilita il fallback per iniziale (evita tagging del falso positivo).
             inversion_present = any(
                 cg and (_norm(cg), fam_n) in name_pairs
-                for (_cf, cg, _oc) in cands
+                for (_, cg, _) in cands
             )
             if inversion_present:
                 return None
@@ -568,16 +408,6 @@ class CrossrefProcessing(RaProcessor):
             if not oc and candidates:
                 oc = _match_orcid(fam, giv, role)
 
-            # 3) Fallback Redis snapshot (se presente e univoca o coerente con l'indice)
-            if not oc and getattr(self, "_redis_values_ra", None):
-                for oc_snap in self._redis_values_ra:
-                    oc_norm = self.orcid_m.normalise(oc_snap, include_prefix=True)
-                    if oc_norm:
-                        if len(self._redis_values_ra) == 1 or (
-                                raw_index and oc_norm.split(":", 1)[1] in str(raw_index)):
-                            oc = oc_norm
-                            break
-
             if oc:
                 if not oc.startswith("orcid:"):
                     oc = f"orcid:{oc}"
@@ -609,20 +439,13 @@ class CrossrefProcessing(RaProcessor):
         alt_doi = doi if (doi and not str(doi).lower().startswith("doi:")) else None
         found_orcids = set()
 
-        # DOI→ORCID index (robusto a vari formati)
+        # DOI→ORCID index
         for candidate in (norm_doi, alt_doi):
             if not candidate:
                 continue
             raw = self.orcid_finder(candidate)
-            if isinstance(raw, dict):
+            if raw:
                 found_orcids.update(k.replace("orcid:", "").strip() for k in raw.keys())
-            elif isinstance(raw, (list, set, tuple)):
-                for v in raw:
-                    m = re.findall(r"(\d{4}-\d{4}-\d{4}-\d{3,4}[0-9X])", str(v))
-                    found_orcids.update(m)
-            elif isinstance(raw, str):
-                m = re.findall(r"(\d{4}-\d{4}-\d{4}-\d{3,4}[0-9X])", raw)
-                found_orcids.update(m)
 
         bare_orcid = norm_orcid.split(":", 1)[1]
         if bare_orcid in found_orcids:

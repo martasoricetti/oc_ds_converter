@@ -1,11 +1,11 @@
-import unittest
-import os
-import shutil
-from oc_ds_converter.run.datacite_process import preprocess
-from oc_ds_converter.oc_idmanager.oc_data_storage.redis_manager import \
-    RedisStorageManager
 import csv
 import json
+import os
+import shutil
+import unittest
+
+from oc_ds_converter.run.datacite_process import preprocess
+
 
 class DataciteProcessTest(unittest.TestCase):
 
@@ -123,8 +123,6 @@ class DataciteProcessTest(unittest.TestCase):
             publishers_filepath=self.publisher_mapping,
             orcid_doi_filepath=None,
             csv_dir=self.output_dir,
-            redis_storage_manager=False,
-            storage_path=self.db,
             cache=self.cache,
             use_orcid_api=False
         )
@@ -185,8 +183,6 @@ class DataciteProcessTest(unittest.TestCase):
             publishers_filepath=self.publisher_mapping,
             orcid_doi_filepath=self.iod,
             csv_dir=self.output_dir,
-            redis_storage_manager=False,
-            storage_path=self.db,
             cache=self.cache,
             use_orcid_api=False,
         )

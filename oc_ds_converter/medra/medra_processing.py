@@ -25,9 +25,8 @@ from oc_ds_converter.ra_processor import RaProcessor
 
 
 class MedraProcessing(RaProcessor):
-    def __init__(self, orcid_index:str=None, doi_csv:str=None):
-        self.doi_set = CSVManager.load_csv_column_as_set(doi_csv, 'id') if doi_csv else None
-        orcid_index = orcid_index if orcid_index else None
+    def __init__(self, orcid_index: str | None = None):
+        super().__init__(orcid_index)
         self.orcid_index = CSVManager(orcid_index)
         self._om = ORCIDManager()
     
@@ -142,7 +141,7 @@ class MedraProcessing(RaProcessor):
         return doi_manager.normalise(context.find('DOI').get_text(), include_prefix=True)
     
     def get_isbn(self, context:BeautifulSoup) -> str:
-        product_identifiers: List[BeautifulSoup] = context.findAll('ProductIdentifier')
+        product_identifiers: List[BeautifulSoup] = context.find_all('ProductIdentifier')
         isbn_list = list()
         if product_identifiers:
             for product_identifier in product_identifiers:
@@ -151,7 +150,7 @@ class MedraProcessing(RaProcessor):
         return isbn_list
     
     def get_contributors(self, context:BeautifulSoup) -> Tuple[list, list]:
-        contributors:List[BeautifulSoup] = context.findAll('Contributor')
+        contributors: List[BeautifulSoup] = context.find_all('Contributor')
         authors = list(); editors = list()
         contributor_roles = {'A': authors, 'B': editors}
         for i, contributor in enumerate(contributors):
@@ -229,14 +228,14 @@ class MedraProcessing(RaProcessor):
     def get_venue(self, context:BeautifulSoup) -> str:
         serial_publication = context.find('SerialPublication')
         serial_work = serial_publication.find('SerialWork')
-        serial_work_titles:List[BeautifulSoup] = serial_work.findAll('Title')
+        serial_work_titles: List[BeautifulSoup] = serial_work.find_all('Title')
         venue_name = None
         for serial_work_title in serial_work_titles:
             if serial_work_title.find('TitleType').get_text() == '01':
                 venue_name = serial_work_title.find('TitleText').get_text()
             elif serial_work_title.find('TitleType').get_text() == '05':
                 venue_name = serial_work_title.find('TitleText').get_text()
-        serial_versions:List[BeautifulSoup] = serial_publication.findAll('SerialVersion')
+        serial_versions: List[BeautifulSoup] = serial_publication.find_all('SerialVersion')
         venue_ids = list()
         for serial_version in serial_versions:
             product_id_type = serial_version.find('ProductIDType')

@@ -83,16 +83,16 @@ class RORManager(IdentifierManager):
 
             return "%s%s" % (
                 self._p if include_prefix else "",
-                ror_id_string.strip(),
+                ror_id_string.strip().lower(),
             )
         except:
             # Any error in processing the ROR ID will return None
             return None
-    
+
     def syntax_ok(self, id_string):
         if not id_string.startswith("ror:"):
             id_string = self._p + id_string
-        
+
         # Check if the ID matches the correct format without protocol or domain
         return True if match(r"^ror:0[a-hj-km-np-tv-z|0-9]{6}[0-9]{2}$", id_string) else False
 

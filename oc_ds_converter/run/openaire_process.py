@@ -1,27 +1,47 @@
-import functools
+import csv
+import gzip
+import json
+import os
 import os.path
 import sys
+from argparse import ArgumentParser
+from os import makedirs
+from pathlib import Path
 from tarfile import TarInfo
 
 import yaml
-from oc_ds_converter.lib.file_manager import normalize_path
-from oc_ds_converter.lib.jsonmanager import *
-from oc_ds_converter.oc_idmanager.oc_data_storage.in_memory_manager import \
-    InMemoryStorageManager
-from oc_ds_converter.oc_idmanager.oc_data_storage.redis_manager import \
-    RedisStorageManager
-from oc_ds_converter.oc_idmanager.oc_data_storage.sqlite_manager import \
-    SqliteStorageManager
-from oc_ds_converter.openaire.openaire_processing import *
-from pebble import ProcessFuture, ProcessPool
+from concurrent.futures import ProcessPoolExecutor
+from filelock import FileLock
+from multiprocessing import get_context
 from tqdm import tqdm
-from filelock import Timeout, FileLock
+
+from oc_ds_converter.lib.file_manager import normalize_path
+from oc_ds_converter.lib.jsonmanager import get_all_files_by_type
+from oc_ds_converter.oc_idmanager.oc_data_storage.in_memory_manager import InMemoryStorageManager
+from oc_ds_converter.oc_idmanager.oc_data_storage.redis_manager import RedisStorageManager
+from oc_ds_converter.oc_idmanager.oc_data_storage.sqlite_manager import SqliteStorageManager
+from oc_ds_converter.oc_idmanager.oc_data_storage.storage_manager import StorageManager
+from oc_ds_converter.openaire.openaire_processing import OpenaireProcessing
+
+
+def get_storage_manager(storage_path: str | None, testing: bool) -> StorageManager:
+    if storage_path:
+        if not os.path.exists(storage_path):
+            if not os.path.exists(os.path.abspath(os.path.join(storage_path, os.pardir))):
+                Path(os.path.abspath(os.path.join(storage_path, os.pardir))).mkdir(parents=True, exist_ok=True)
+        if storage_path.endswith(".db"):
+            return SqliteStorageManager(storage_path)
+        if storage_path.endswith(".json"):
+            return InMemoryStorageManager(storage_path)
+        raise ValueError(f"Storage path must end with .db or .json, got: {storage_path}")
+    return RedisStorageManager(testing=testing)
 
 
 def preprocess(
-        openaire_json_dir:str, publishers_filepath:str, orcid_doi_filepath:str, 
-        csv_dir:str, wanted_doi_filepath:str=None, cache:str=None, verbose:bool=False, storage_path:str = None, 
-        testing: bool = True, redis_storage_manager: bool = False, max_workers: int = 1, target=50000) -> None:
+        openaire_json_dir: str, publishers_filepath: str | None, orcid_doi_filepath: str | None,
+        csv_dir: str, cache: str | None = None, verbose: bool = False,
+        testing: bool = True, max_workers: int = 1, target: int = 50000, exclude_existing: bool = False,
+        storage_path: str | None = None) -> None:
 
     if not testing: # NON CANCELLARE FILES MA PRENDI SOLO IN CONSIDERAZIONE
         input_dir_cont = os.listdir(openaire_json_dir)
@@ -54,14 +74,12 @@ def preprocess(
     if not os.path.exists(preprocessed_citations_dir):
         makedirs(preprocessed_citations_dir)
     if verbose:
-        if publishers_filepath or orcid_doi_filepath or wanted_doi_filepath:
+        if publishers_filepath or orcid_doi_filepath:
             what = list()
             if publishers_filepath:
                 what.append('publishers mapping')
             if orcid_doi_filepath:
                 what.append('DOI-ORCID index')
-            if wanted_doi_filepath:
-                what.append('wanted DOIs CSV')
             log = '[INFO: openaire_process] Processing: ' + '; '.join(what)
             print(log)
 
@@ -71,37 +89,35 @@ def preprocess(
 
     all_input_tar = os.listdir(openaire_json_dir)
     for tar in all_input_tar:
-        all_files, targz_fd = get_all_files_by_type(os.path.join(openaire_json_dir, tar), req_type, cache)
-        if not redis_storage_manager or max_workers == 1:
+        all_files, targz_fd = get_all_files_by_type(os.path.join(openaire_json_dir, tar), req_type)
+        if max_workers == 1:
             for filename in all_files:
-                get_citations_and_metadata(tar, preprocessed_citations_dir, csv_dir, filename, orcid_doi_filepath, wanted_doi_filepath, publishers_filepath, storage_path, redis_storage_manager, testing, cache, target)
+                get_citations_and_metadata(tar, preprocessed_citations_dir, csv_dir, filename, orcid_doi_filepath, publishers_filepath, testing, cache, target, exclude_existing, storage_path)
 
 
-        elif redis_storage_manager or max_workers > 1:
-            with ProcessPool(max_workers=max_workers, max_tasks=1) as executor:
+        elif max_workers > 1:
+            with ProcessPoolExecutor(max_workers=max_workers, mp_context=get_context('spawn')) as executor:
                 for filename in all_files:
-                    future:ProcessFuture = executor.schedule(
-                        function = get_citations_and_metadata,
-                        args=(tar, preprocessed_citations_dir, csv_dir, filename, orcid_doi_filepath, wanted_doi_filepath, publishers_filepath, storage_path, redis_storage_manager, testing, cache, target)
+                    executor.submit(
+                        get_citations_and_metadata,
+                        tar, preprocessed_citations_dir, csv_dir, filename, orcid_doi_filepath, publishers_filepath, testing, cache, target, exclude_existing, storage_path
                     )
 
 
     if cache:
         if os.path.exists(cache):
             os.remove(cache)
-    lock_file = cache + ".lock"
-    if os.path.exists(lock_file):
-        os.remove(lock_file)
+        lock_file = cache + ".lock"
+        if os.path.exists(lock_file):
+            os.remove(lock_file)
 
-    # added to avoid order-releted issues in sequential tests runs
+    # added to avoid order-related issues in sequential tests runs
     if testing:
-        storage_manager = get_storage_manager(storage_path, redis_storage_manager, testing=testing)
+        storage_manager = RedisStorageManager(testing=testing)
         storage_manager.delete_storage()
 
 
-def get_citations_and_metadata(tar: str, preprocessed_citations_dir: str, csv_dir: str, filename: str, orcid_index: str, doi_csv: str, publishers_filepath_openaire: str, storage_path: str, redis_storage_manager: bool, testing: bool, cache:str, target=50000):
-
-    storage_manager = get_storage_manager(storage_path, redis_storage_manager, testing=testing)
+def get_citations_and_metadata(tar: str, preprocessed_citations_dir: str, csv_dir: str, filename: str, orcid_index: str | None, publishers_filepath_openaire: str | None, testing: bool, cache: str | None, target: int = 50000, exclude_existing: bool = False, storage_path: str | None = None):
 
     if cache:
         if not cache.endswith(".json"):
@@ -122,7 +138,7 @@ def get_citations_and_metadata(tar: str, preprocessed_citations_dir: str, csv_di
             with open(cache, "r", encoding="utf-8") as c:
                 try:
                     cache_dict = json.load(c)
-                except:
+                except json.JSONDecodeError:
                     write_new = True
     else:
         write_new = True
@@ -152,7 +168,8 @@ def get_citations_and_metadata(tar: str, preprocessed_citations_dir: str, csv_di
                     else:
                         last_part_processed = cache_dict[tar][filename]
 
-    openaire_csv = OpenaireProcessing(orcid_index=orcid_index, doi_csv=doi_csv, publishers_filepath_openaire=publishers_filepath_openaire, storage_manager=storage_manager, testing=testing)
+    storage_manager = get_storage_manager(storage_path, testing)
+    openaire_csv = OpenaireProcessing(orcid_index=orcid_index, publishers_filepath_openaire=publishers_filepath_openaire, storage_manager=storage_manager, testing=testing, exclude_existing=exclude_existing)
 
     index_citations_to_csv = []
     data = []
@@ -171,7 +188,6 @@ def get_citations_and_metadata(tar: str, preprocessed_citations_dir: str, csv_di
     filepath_citations_ne = os.path.join(preprocessed_citations_dir, f'{os.path.basename(filename_without_ext)}')
 
     filepath = os.path.join(csv_dir, f'{os.path.basename(filename_without_ext)}.csv')
-    filepath_citations = os.path.join(preprocessed_citations_dir, f'{os.path.basename(filename_without_ext)}.csv')
     pathoo(filepath)
 
     def get_all_redis_ids_and_save_updates(sli_da):
@@ -190,8 +206,8 @@ def get_citations_and_metadata(tar: str, preprocessed_citations_dir: str, csv_di
                         all_br.extend(ent_all_br)
                         all_ra.extend(ent_all_ra)
 
-        redis_validity_values_br = openaire_csv.get_reids_validity_list(all_br, "br")
-        redis_validity_values_ra = openaire_csv.get_reids_validity_list(all_ra, "ra")
+        redis_validity_values_br = openaire_csv.get_redis_validity_list(all_br, "br")
+        redis_validity_values_ra = openaire_csv.get_redis_validity_list(all_ra, "ra")
         openaire_csv.update_redis_values(redis_validity_values_br, redis_validity_values_ra)
 
     def save_files(ent_list, citation_list, nf, is_last_sf=False):
@@ -356,7 +372,8 @@ def get_citations_and_metadata(tar: str, preprocessed_citations_dir: str, csv_di
                                 all_citing_valid = processed_source_ids
                                 if all_citing_valid: # It meanst that there is at least one valid id for the citing entity
                                     any_source_id = all_citing_valid[0]
-                                    data.append(source_tab_data) # Otherwise the row should not be included in meta tables
+                                    if not (openaire_csv.exclude_existing and openaire_csv.BR_redis.exists_as_set(any_source_id)):
+                                        data.append(source_tab_data) # Otherwise the row should not be included in meta tables
 
 
                         # skip creation of a new row in meta table because there is no new id to be validated
@@ -374,7 +391,8 @@ def get_citations_and_metadata(tar: str, preprocessed_citations_dir: str, csv_di
                                 all_cited_valid = processed_target_ids
                                 if all_cited_valid:
                                     any_target_id = all_cited_valid[0]
-                                    data.append(target_tab_data) # otherwise the row should not be included in meta tables
+                                    if not (openaire_csv.exclude_existing and openaire_csv.BR_redis.exists_as_set(any_target_id)):
+                                        data.append(target_tab_data) # otherwise the row should not be included in meta tables
 
                         # skip creation of a new row in meta table because there is no new id to be validated
                         # "any_target_id" will be chosen among the valid source entity ids, if any
@@ -394,31 +412,6 @@ def get_citations_and_metadata(tar: str, preprocessed_citations_dir: str, csv_di
     data, index_citations_to_csv = save_files(data, index_citations_to_csv, last_part_processed, is_last_sf=True)
     pbar.close()
 
-def get_storage_manager(storage_path: str, redis_storage_manager: bool, testing: bool):
-    if not redis_storage_manager:
-        if storage_path:
-            if not os.path.exists(storage_path):
-            # if parent dir does not exist, it is created
-                if not os.path.exists(os.path.abspath(os.path.join(storage_path, os.pardir))):
-                    Path(os.path.abspath(os.path.join(storage_path, os.pardir))).mkdir(parents=True, exist_ok=True)
-            if storage_path.endswith(".db"):
-                storage_manager = SqliteStorageManager(storage_path)
-            elif storage_path.endswith(".json"):
-                storage_manager = InMemoryStorageManager(storage_path)
-
-        if not storage_path and not redis_storage_manager:
-            new_path_dir = os.path.join(os.getcwd(), "storage")
-            if not os.path.exists(new_path_dir):
-                os.makedirs(new_path_dir)
-            storage_manager = SqliteStorageManager(os.path.join(new_path_dir, "id_valid_dict.db"))
-    elif redis_storage_manager:
-        if testing:
-            storage_manager = RedisStorageManager(testing=True)
-        else:
-            storage_manager = RedisStorageManager(testing=False)
-    return storage_manager
-
-
 def pathoo(path:str) -> None:
     if not os.path.exists(os.path.dirname(path)):
         os.makedirs(os.path.dirname(path))
@@ -436,26 +429,22 @@ if __name__ == '__main__':
                             help='CSV file path containing information about publishers (id, name, prefix)')
     arg_parser.add_argument('-o', '--orcid', dest='orcid_doi_filepath', required=False,
                             help='DOI-ORCID index filepath, to enrich data')
-    arg_parser.add_argument('-w', '--wanted', dest='wanted_doi_filepath', required=False,
-                            help='A CSV filepath containing what DOI to process, not mandatory')
     arg_parser.add_argument('-ca', '--cache', dest='cache', required=False,
                         help='The cache file path. This file will be deleted at the end of the process')
     arg_parser.add_argument('-v', '--verbose', dest='verbose', action='store_true', required=False,
                             help='Show a loading bar, elapsed time and estimated time')
-    arg_parser.add_argument('-sp', '--storage_path', dest='storage_path', required=False,
-                            help='path of the file where to store data concerning validated pids information.'
-                                 'Pay attention to specify a ".db" file in case you chose the SqliteStorageManager'
-                                 'and a ".json" file if you chose InMemoryStorageManager')
     arg_parser.add_argument('-t', '--testing', dest='testing', action='store_true', required=False,
                             help='parameter to define if the script is to be run in testing mode. Pay attention:'
                                  'by default the script is run in test modality and thus the data managed by redis, '
                                  'stored in a specific redis db, are not retrieved nor permanently saved, since an '
                                  'instance of a FakeRedis class is created and deleted by the end of the process.')
-    arg_parser.add_argument('-r', '--redis_storage_manager', dest='redis_storage_manager', action='store_true', required=False,
-                            help='parameter to define whether or not to use redis as storage manager. Note that by default the parameter '
-                                 'value is set to false, which means that -unless it is differently stated- the storage manager used is'
-                                 'derived by the storage filepath type (i.e.: .db or .json). The redis db used by the storage manager is the n.2')
     arg_parser.add_argument('-m', '--max_workers', dest='max_workers', required=False, default=1, type=int, help='Workers number')
+    arg_parser.add_argument('--exclude-existing', dest='exclude_existing', action='store_true', required=False,
+                            help='Exclude entities that already exist in Meta from the output CSV')
+    arg_parser.add_argument('-s', '--storage_path', dest='storage_path', required=False,
+                            help='Path for ID validation storage. Use .db extension for SQLite or .json for '
+                                 'in-memory JSON storage. If not specified, uses Redis (default). '
+                                 'Note: SQLite and JSON storage are single-threaded (--max_workers is ignored).')
     args = arg_parser.parse_args()
     config = args.config
     settings = None
@@ -470,18 +459,20 @@ if __name__ == '__main__':
     publishers_filepath = normalize_path(publishers_filepath) if publishers_filepath else None
     orcid_doi_filepath = settings['orcid_doi_filepath'] if settings else args.orcid_doi_filepath
     orcid_doi_filepath = normalize_path(orcid_doi_filepath) if orcid_doi_filepath else None
-    wanted_doi_filepath = settings['wanted_doi_filepath'] if settings else args.wanted_doi_filepath
-    wanted_doi_filepath = normalize_path(wanted_doi_filepath) if wanted_doi_filepath else None
     cache = settings['cache_filepath'] if settings else args.cache
     cache = normalize_path(cache) if cache else None
     verbose = settings['verbose'] if settings else args.verbose
-    storage_path = settings['storage_path'] if settings else args.storage_path
-    storage_path = normalize_path(storage_path) if storage_path else None
     testing = settings['testing'] if settings else args.testing
-    redis_storage_manager = settings['redis_storage_manager'] if settings else args.redis_storage_manager
     max_workers = settings['max_workers'] if settings else args.max_workers
+    exclude_existing = settings.get('exclude_existing', False) if settings else args.exclude_existing
+    storage_path = settings.get('storage_path', args.storage_path) if settings else args.storage_path
+    storage_path = normalize_path(storage_path) if storage_path else None
+
+    if storage_path and max_workers > 1:
+        print('[Warning] SQLite/JSON storage requires single-threaded mode. Setting max_workers=1')
+        max_workers = 1
 
     preprocess(openaire_json_dir=openaire_json_dir, publishers_filepath=publishers_filepath,
-               orcid_doi_filepath=orcid_doi_filepath, csv_dir=csv_dir, wanted_doi_filepath=wanted_doi_filepath, 
-               cache=cache, verbose=verbose, storage_path=storage_path, testing=testing, 
-               redis_storage_manager=redis_storage_manager, max_workers=max_workers)
+               orcid_doi_filepath=orcid_doi_filepath, csv_dir=csv_dir,
+               cache=cache, verbose=verbose, testing=testing, max_workers=max_workers, exclude_existing=exclude_existing,
+               storage_path=storage_path)

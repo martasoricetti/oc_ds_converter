@@ -18,41 +18,37 @@
 
 
 import html
+import json
+import os
+import os.path
 import re
 import warnings
 from pathlib import Path
-from typing import Optional
-import os
-import os.path
-import json
-import csv
+from typing import List, Tuple
 
 from bs4 import BeautifulSoup
-from oc_ds_converter.oc_idmanager import DOIManager
-from oc_ds_converter.oc_idmanager import ISBNManager
-from oc_ds_converter.oc_idmanager import ISSNManager
-from oc_ds_converter.oc_idmanager import ORCIDManager
 
-from oc_ds_converter.lib.master_of_regex import *
-import fakeredis
-from oc_ds_converter.datasource.redis import RedisDataSource
-from oc_ds_converter.ra_processor import RaProcessor
-from oc_ds_converter.oc_idmanager.oc_data_storage.storage_manager import StorageManager
-from oc_ds_converter.oc_idmanager.oc_data_storage.in_memory_manager import InMemoryStorageManager
-from oc_ds_converter.oc_idmanager.oc_data_storage.sqlite_manager import SqliteStorageManager
 from oc_ds_converter.crossref.crossref_processing import CrossrefProcessing
-from typing import Dict, List, Tuple
+from oc_ds_converter.datasource.redis import FakeRedisWrapper, RedisDataSource
 from oc_ds_converter.lib.cleaner import Cleaner
+from oc_ds_converter.lib.master_of_regex import ids_inside_square_brackets, pages_separator
+from oc_ds_converter.oc_idmanager import DOIManager, ISBNManager, ISSNManager, ORCIDManager
+from oc_ds_converter.oc_idmanager.oc_data_storage.redis_manager import RedisStorageManager
+from oc_ds_converter.oc_idmanager.oc_data_storage.storage_manager import StorageManager
+from oc_ds_converter.oc_idmanager.oc_data_storage.batch_manager import BatchManager
+from oc_ds_converter.ra_processor import RaProcessor
 
 warnings.filterwarnings("ignore", category=UserWarning, module='bs4')
 
 
 class ZoteroProcessing(RaProcessor):
 
-    def __init__(self, orcid_index: str = None, doi_csv: str = None, publishers_filepath: str = None,
-                 testing: bool = True, storage_manager: Optional[StorageManager] = None, citing=True):
-        super(ZoteroProcessing, self).__init__(orcid_index, doi_csv, publishers_filepath)
+    def __init__(self, orcid_index: str | None = None, publishers_filepath: str | None = None,
+                 storage_manager: StorageManager | None = None, testing: bool = True, citing: bool = True, exclude_existing: bool = False):
+        super(ZoteroProcessing, self).__init__(orcid_index, publishers_filepath)
+        self.exclude_existing = exclude_existing
         self.citing = citing
+        self._testing = testing
 
         self.mapping_types_to_ocdm = {
             "chapter": "book chapter",
@@ -95,19 +91,17 @@ class ZoteroProcessing(RaProcessor):
             ]
         }
 
-
-
         if storage_manager is None:
-            self.storage_manager = SqliteStorageManager()
+            self.storage_manager = RedisStorageManager(testing=testing)
         else:
             self.storage_manager = storage_manager
 
-        self.temporary_manager = InMemoryStorageManager('../memory.json')
+        self.temporary_manager = BatchManager()
 
-        self.doi_m = DOIManager(storage_manager=self.storage_manager)
+        self.doi_m = DOIManager(storage_manager=self.storage_manager, testing=testing)
         self.issn_m = ISSNManager()
         self.isbn_m = ISBNManager()
-        self.orcid_m = ORCIDManager(storage_manager=self.storage_manager)
+        self.orcid_m = ORCIDManager(storage_manager=self.storage_manager, testing=testing)
 
 
         self.venue_id_man_dict = {"issn": self.issn_m}
@@ -118,17 +112,16 @@ class ZoteroProcessing(RaProcessor):
         # a storage_manager db would be considered to have been processed and thus would be ignored by the process
         # and lost.
 
-        self.tmp_doi_m = DOIManager(storage_manager=self.temporary_manager)
+        self.tmp_doi_m = DOIManager(storage_manager=self.temporary_manager, testing=testing)
         self.tmp_issn_m = ISSNManager()
         self.tmp_isbn_m = ISBNManager()
+        self.tmp_orcid_m = ORCIDManager(storage_manager=self.temporary_manager, testing=testing)
 
         self.venue_tmp_id_man_dict = {"issn": self.issn_m}
 
         if testing:
-            self.BR_redis = fakeredis.FakeStrictRedis()
-            self.RA_redis = fakeredis.FakeStrictRedis()
-
-
+            self.BR_redis = FakeRedisWrapper()
+            self.RA_redis = FakeRedisWrapper()
         else:
             self.BR_redis = RedisDataSource("DB-META-BR")
             self.RA_redis = RedisDataSource("DB-META-RA")
@@ -155,8 +148,10 @@ class ZoteroProcessing(RaProcessor):
         entity_ids = set()
         venue_ids = set()
 
-        type = self.mapping_types_to_ocdm.get(norm_id_dict["type"])
-        ids_per_type = self.accepted_ids[type]
+        entity_type = self.mapping_types_to_ocdm.get(norm_id_dict["type"])
+        if not entity_type:
+            return entity_ids, venue_ids
+        ids_per_type = self.accepted_ids[entity_type]
 
         if doi and "doi" in ids_per_type:
 
@@ -255,14 +250,13 @@ class ZoteroProcessing(RaProcessor):
         row = dict()
 
         doi_manager = DOIManager(use_api_service=False)
-        isbn_manager = ISBNManager()
 
         if item.get("DOI"):
             if isinstance(item['DOI'], list):
                 doi = doi_manager.normalise(str(item['DOI'][0]), include_prefix=False)
             else:
                 doi = doi_manager.normalise(str(item['DOI']), include_prefix=False)
-            if not ((doi and self.doi_set and doi in self.doi_set) or (doi and not self.doi_set)):
+            if not doi:
                 return row
         else:
             doi = ""
@@ -453,11 +447,11 @@ class ZoteroProcessing(RaProcessor):
         return name_and_id
 
     # UPDATED FOR CROSSREF √
-    def extract_all_ids(self, entity_dict, is_first_iteration: bool):
+    def extract_all_ids(self, entity_dict, is_citing: bool):
         all_br = set()
         all_ra = set()
 
-        if is_first_iteration:
+        if is_citing:
             # VALIDATE RESPONSIBLE AGENTS IDS FOR THE CITING ENTITY (THE CITING ENTITY DOI IS VALID BY
             # DEFAULT SINCE IT WAS ASSIGNED BY CROSSREF, WHICH IS ALSO ITS DOI REGISTRATION AGENCY.
 
@@ -498,27 +492,16 @@ class ZoteroProcessing(RaProcessor):
         all_ra = list(all_ra)
         return all_br, all_ra
 
-    def get_reids_validity_list(self, id_list, redis_db):
+    def get_redis_validity_list(self, id_list, redis_db):
+        ids = list(id_list)
         if redis_db == "ra":
-            valid_ra_ids = []
-            # DO NOT UPDATED (REDIS RETRIEVAL METHOD HERE)
-            validity_list_ra = self.RA_redis.mget(id_list)
-            for i, e in enumerate(id_list):
-                if validity_list_ra[i]:
-                    valid_ra_ids.append(e)
-            return valid_ra_ids
-
+            validity = self.RA_redis.mexists_as_set(ids)
+            return [ids[i] for i, v in enumerate(validity) if v]
         elif redis_db == "br":
-            valid_br_ids = []
-            # DO NOT UPDATED (REDIS RETRIEVAL METHOD HERE)
-            validity_list_br = self.BR_redis.mget(id_list)
-            for i, e in enumerate(id_list):
-                if validity_list_br[i]:
-                    valid_br_ids.append(e)
-            return valid_br_ids
+            validity = self.BR_redis.mexists_as_set(ids)
+            return [ids[i] for i, v in enumerate(validity) if v]
         else:
-            raise ValueError("redis_db must be either 'ra' for responsible agents ids "
-                             "or 'br' for bibliographic resources ids")
+            raise ValueError("redis_db must be either 'ra' or 'br'")
 
     # done
     def get_agents_strings_list(self, doi: str, agents_list: List[dict]) -> Tuple[list, list]:
@@ -572,7 +555,7 @@ class ZoteroProcessing(RaProcessor):
             if orcid:
 
                 # VALIDATE ORCID HERE (with same procedure used for br identifiers)
-                orcid = self.crossref_processor.find_crossref_orcid(orcid)
+                orcid = self.crossref_processor.find_crossref_orcid(orcid, doi)
                 # END: VALIDATE ORCID HERE
 
             elif dict_orcid and f_name:

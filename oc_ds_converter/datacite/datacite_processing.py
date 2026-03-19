@@ -51,7 +51,20 @@ from oc_ds_converter.datasource.redis import RedisDataSource
 from oc_ds_converter.ra_processor import RaProcessor
 from typing import Dict, List, Tuple, Optional, Type, Callable
 from pathlib import Path
+from typing import List, Tuple
+
+from bs4 import BeautifulSoup
+
+from oc_ds_converter.datasource.redis import FakeRedisWrapper, RedisDataSource
 from oc_ds_converter.lib.cleaner import Cleaner
+from oc_ds_converter.oc_idmanager.doi import DOIManager
+from oc_ds_converter.oc_idmanager.isbn import ISBNManager
+from oc_ds_converter.oc_idmanager.issn import ISSNManager
+from oc_ds_converter.oc_idmanager.oc_data_storage.redis_manager import RedisStorageManager
+from oc_ds_converter.oc_idmanager.oc_data_storage.storage_manager import StorageManager
+from oc_ds_converter.oc_idmanager.oc_data_storage.batch_manager import BatchManager
+from oc_ds_converter.oc_idmanager.orcid import ORCIDManager
+from oc_ds_converter.ra_processor import RaProcessor
 
 warnings.filterwarnings("ignore", category=UserWarning, module='bs4')
 
@@ -59,15 +72,17 @@ warnings.filterwarnings("ignore", category=UserWarning, module='bs4')
 class DataciteProcessing(RaProcessor):
     def __init__(self, orcid_index: str = None, doi_csv: str = None, publishers_filepath_dc: str = None,
                  testing: bool = True, storage_manager: Optional[StorageManager] = None,
-                 use_orcid_api: bool = True, use_ror_api: bool = True, use_viaf_api:bool = True, use_wikidata_api:bool = True):
+                 use_orcid_api: bool = True, use_ror_api: bool = True, use_viaf_api:bool = True, use_wikidata_api:bool = True,
+                 exclude_existing: bool = False):
         super(DataciteProcessing, self).__init__(orcid_index, doi_csv)
         # self.preprocessor = DatacitePreProcessing(inp_dir, out_dir, interval, filter)
         if storage_manager is None:
-            self.storage_manager = SqliteStorageManager()
+            self.storage_manager = RedisStorageManager(testing=testing)
         else:
             self.storage_manager = storage_manager
 
-        self.temporary_manager = InMemoryStorageManager('../memory.json')
+        self.exclude_existing = exclude_existing
+        self.temporary_manager = BatchManager()
 
         self.needed_info = ["relationType", "relatedIdentifierType", "relatedIdentifier"]
         self.filter = ["references", "isreferencedby", "cites", "iscitedby"]
@@ -186,8 +201,8 @@ class DataciteProcessing(RaProcessor):
     # def input_preprocessing(self):
     # self.preprocessor.split_input()
 
-        self.doi_m = DOIManager(storage_manager=self.storage_manager)
-        self.orcid_m = ORCIDManager(use_api_service=use_orcid_api, storage_manager=self.storage_manager)
+        self.doi_m = DOIManager(storage_manager=self.storage_manager, testing=testing)
+        self.orcid_m = ORCIDManager(storage_manager=self.storage_manager, use_api_service=use_orcid_api, testing=testing)
         self.issn_m = ISSNManager()
         self.isbn_m = ISBNManager()
         self.ror_m = RORManager(use_api_service=use_ror_api, storage_manager=self.storage_manager)
@@ -201,8 +216,8 @@ class DataciteProcessing(RaProcessor):
         self.venue_id_man_dict = {"issn": self.issn_m, "isbn": self.isbn_m}
         # Temporary storage managers : all data must be stored in tmp storage manager and passed all together to the
         # main storage_manager  only once the full file is processed.
-        self.tmp_doi_m = DOIManager(storage_manager=self.temporary_manager)
-        self.tmp_orcid_m = ORCIDManager(use_api_service=use_orcid_api, storage_manager=self.temporary_manager)
+        self.tmp_doi_m = DOIManager(storage_manager=self.temporary_manager, testing=testing)
+        self.tmp_orcid_m = ORCIDManager(storage_manager=self.temporary_manager, use_api_service=use_orcid_api, testing=testing)
         self.venue_tmp_id_man_dict = {"issn": self.issn_m, "isbn": self.isbn_m}
         self.tmp_ror_m = RORManager(use_api_service=use_ror_api, storage_manager=self.temporary_manager)
         self.tmp_viaf_m = ViafManager(use_api_service=use_viaf_api, storage_manager=self.temporary_manager)
@@ -210,8 +225,8 @@ class DataciteProcessing(RaProcessor):
         self.ra_tmp_man_dict = {"orcid": self.tmp_orcid_m, "viaf": self.tmp_viaf_m, "wikidata": self.tmp_wikidata_m, "ror": self.tmp_ror_m}
 
         if testing:
-            self.BR_redis = fakeredis.FakeStrictRedis()
-            self.RA_redis = fakeredis.FakeStrictRedis()
+            self.BR_redis = FakeRedisWrapper()
+            self.RA_redis = FakeRedisWrapper()
         else:
             self.BR_redis = RedisDataSource("DB-META-BR")
             self.RA_redis = RedisDataSource("DB-META-RA")
@@ -425,7 +440,7 @@ class DataciteProcessing(RaProcessor):
     def csv_creator(self, item: dict) -> dict:
         row = dict()
         doi = str(item['id'])
-        if (doi and self.doi_set and doi in self.doi_set) or (doi and not self.doi_set):
+        if doi:
             norm_id = self.doi_m.normalise(doi, include_prefix=True)
             keys = ['id', 'title', 'author', 'pub_date', 'venue', 'volume', 'issue', 'page', 'type',
                     'publisher', 'editor']
@@ -573,8 +588,8 @@ class DataciteProcessing(RaProcessor):
             except TypeError:
                 print(row)
                 raise(TypeError)
+        return {}
 
-    #added
     def to_validated_id_list(self, norm_id_dict):
         """Questo metodo verifica la validità di un identificatore in base al suo schema (es. 'doi').
     Ottimizza il processo interrogando prima una cache locale pre-caricata (`_redis_values_br`).
@@ -755,7 +770,7 @@ class DataciteProcessing(RaProcessor):
                 cont_title = (container["title"].lower()).replace('\n', '')
                 ven_soup = BeautifulSoup(cont_title, 'html.parser')
                 ventit = html.unescape(ven_soup.get_text())
-                ambiguous_brackets = re.search('\[\s*((?:[^\s]+:[^\s]+)?(?:\s+[^\s]+:[^\s]+)*)\s*\]', ventit)
+                ambiguous_brackets = re.search(r'\[\s*((?:[^\s]+:[^\s]+)?(?:\s+[^\s]+:[^\s]+)*)\s*\]', ventit)
                 if ambiguous_brackets:
                     match = ambiguous_brackets.group(1)
                     open_bracket = ventit.find(match) - 1
@@ -819,8 +834,9 @@ class DataciteProcessing(RaProcessor):
     #added the call to find_datacite_orcid
     def add_editors_to_agent_list(self, item: dict, ag_list: list, doi: str) -> list:
         agent_list = ag_list
-        if item.get("contributors"):
-            editors = [contributor for contributor in item.get("contributors") if
+        contributors = item.get("contributors")
+        if contributors:
+            editors = [contributor for contributor in contributors if
                        contributor.get("contributorType") == "Editor"]
             for ed in editors:
                 agent = {}
@@ -847,8 +863,8 @@ class DataciteProcessing(RaProcessor):
     # added the call to find_datacite_orcid
     def add_authors_to_agent_list(self, item: dict, ag_list: list, doi: str) -> list:
         agent_list = ag_list
-        if item.get("creators"):
-            creators = item.get("creators")
+        creators = item.get("creators")
+        if creators:
             for c in creators:
                 agent = {}
                 agent["role"] = "author"
@@ -888,8 +904,8 @@ class DataciteProcessing(RaProcessor):
             )
             if isinstance(raw, dict):
                 found_orcids = {k.replace("orcid:", "").strip() for k in raw.keys()}
-            elif isinstance(raw, (set, list, tuple)):
-                for v in raw:
+            elif isinstance(raw, (set, list)):
+                for v in list(raw):
                     m = re.findall(r"(\d{4}-\d{4}-\d{4}-\d{3,4}[0-9X])", str(v))
                     found_orcids.update(m)
             elif isinstance(raw, str):
@@ -932,10 +948,10 @@ class DataciteProcessing(RaProcessor):
         self.temporary_manager.delete_storage()
 
     # added (division in first and second iteration)
-    def extract_all_ids(self, citation, is_first_iteration: bool):
+    def extract_all_ids(self, citation, is_citing: bool):
 
         """Nella prima iterazione estraggo e normalizzo gli identificativi dei RA (authors, editors, publishers)"""
-        if is_first_iteration:
+        if is_citing:
             all_br = set()
             all_ra = set()
 
@@ -1009,10 +1025,10 @@ class DataciteProcessing(RaProcessor):
         """Questo metodo interroga Redis per una lista di identificativi e restituisce solo quelli che risultano salvati come validi"""
         ids = list(id_list)  # garantisci ordine deterministico
         if redis_db == "ra":
-            validity = self.RA_redis.mget(ids)
+            validity = self.RA_redis.mexists_as_set(ids)
             return [ids[i] for i, v in enumerate(validity) if v]
         elif redis_db == "br":
-            validity = self.BR_redis.mget(ids)
+            validity = self.BR_redis.mexists_as_set(ids)
             return [ids[i] for i, v in enumerate(validity) if v]
         else:
             raise ValueError("redis_db must be either 'ra' or 'br'")

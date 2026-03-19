@@ -28,7 +28,7 @@ class CSVManager(object):
     easily queried. In addition, it allows one to store new information in the CSV,
     if needed.
     '''
-    def __init__(self, output_path:str=None, line_threshold=10000, low_memory:bool=False):
+    def __init__(self, output_path: str | None = None, line_threshold: int = 10000, low_memory: bool = False):
         self.output_path = output_path
         self.data:Dict[str, set] = {}
         self.data_to_store = list()
@@ -111,6 +111,9 @@ class CSVManager(object):
         '''
         if id_string in self.data:
             return set(self.data[id_string])
+
+    def get_values_batch(self, ids: list[str]) -> dict[str, set[str]]:
+        return {id_str: set(self.data[id_str]) for id_str in ids if id_str in self.data}
 
     def add_value(self, id_string, value):
         '''

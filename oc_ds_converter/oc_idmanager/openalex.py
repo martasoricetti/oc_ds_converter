@@ -15,24 +15,23 @@
 # SOFTWARE.
 
 from oc_ds_converter.oc_idmanager.base import IdentifierManager
+from oc_ds_converter.oc_idmanager.oc_data_storage.redis_manager import RedisStorageManager
 from oc_ds_converter.oc_idmanager.oc_data_storage.storage_manager import StorageManager
-from oc_ds_converter.oc_idmanager.oc_data_storage.in_memory_manager import InMemoryStorageManager
 from re import sub, match
 from requests import ReadTimeout, get
 from requests.exceptions import ConnectionError
 from json import loads
 from time import sleep
-from typing import Optional
 
 
 class OpenAlexManager(IdentifierManager):
     """This class implements an identifier manager for openalex identifier"""
 
-    def __init__(self, use_api_service=True, storage_manager: Optional[StorageManager] = None):
+    def __init__(self, use_api_service: bool = True, storage_manager: StorageManager | None = None, testing: bool = True) -> None:
         """OpenAlex manager constructor."""
         super(OpenAlexManager, self).__init__()
         if storage_manager is None:
-            self.storage_manager = InMemoryStorageManager()
+            self.storage_manager = RedisStorageManager(testing=testing)
         else:
             self.storage_manager = storage_manager
         self._api = "https://api.openalex.org/"
