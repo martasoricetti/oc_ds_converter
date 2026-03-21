@@ -1,0 +1,9 @@
+# SPDX-FileCopyrightText: 2023-2026 Arcangelo Massari <arcangelo.massari@unibo.it>
+#
+# SPDX-License-Identifier: ISC
+
+# .coveragerc to control coverage.py
+[run]
+command_line = -m pytest test/ -v
+omit =
+    oc_ds_converter/run/*

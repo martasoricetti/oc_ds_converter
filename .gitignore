@@ -17,4 +17,3 @@ cache.json
 report_output_folder/
 dist/
 .coverage
-test/coverage/.coveragerc
