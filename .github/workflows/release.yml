@@ -1,0 +1,57 @@
+# SPDX-FileCopyrightText: 2026 Arcangelo Massari <arcangelo.massari@unibo.it>
+#
+# SPDX-License-Identifier: ISC
+
+name: Release
+
+on:
+  workflow_run:
+    workflows: ["Run tests"]
+    types:
+      - completed
+    branches: [main]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success' && contains(github.event.workflow_run.head_commit.message, '[release]')
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+
+      - name: Install semantic-release plugins
+        run: npm install -g semantic-release @semantic-release/commit-analyzer @semantic-release/release-notes-generator @semantic-release/changelog @semantic-release/exec @semantic-release/github @semantic-release/git
+
+      - name: Run semantic-release
+        id: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION_BEFORE=$(grep '^version' pyproject.toml | head -1 | cut -d'"' -f2)
+          npx semantic-release
+          VERSION_AFTER=$(grep '^version' pyproject.toml | head -1 | cut -d'"' -f2)
+          if [ "$VERSION_BEFORE" != "$VERSION_AFTER" ]; then
+            echo "released=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and publish to PyPI
+        if: steps.release.outputs.released == 'true'
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
+        run: |
+          uv build
+          uv publish --token $UV_PUBLISH_TOKEN

@@ -186,6 +186,7 @@ SPDX-License-Identifier = "ISC"
 
 [[annotations]]
 path = [
+    ".releaserc.json",
     "LICENSE",
     "REUSE.toml",
 ]

@@ -9,6 +9,8 @@ SPDX-License-Identifier: ISC
 [![Run tests](https://github.com/opencitations/oc_ds_converter/actions/workflows/run_tests.yml/badge.svg)](https://github.com/opencitations/oc_ds_converter/actions/workflows/run_tests.yml)
 [![Coverage](https://opencitations.github.io/oc_ds_converter/coverage-badge.svg)](https://opencitations.github.io/oc_ds_converter/)
 [![REUSE](https://github.com/opencitations/oc_ds_converter/actions/workflows/reuse.yml/badge.svg)](https://github.com/opencitations/oc_ds_converter/actions/workflows/reuse.yml)
+[![PyPI version](https://img.shields.io/pypi/v/oc-ds-converter)](https://pypi.org/project/oc-ds-converter/)
+[![Python versions](https://img.shields.io/pypi/pyversions/oc-ds-converter)](https://pypi.org/project/oc-ds-converter/)
 ![GitHub code size in bytes](https://img.shields.io/github/languages/code-size/opencitations/oc_ds_converter)
 
 # OpenCitations Data Sources Converter
