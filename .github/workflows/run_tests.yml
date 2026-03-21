@@ -15,9 +15,6 @@ on:
 permissions:
   contents: read
 
-env:
-  COVERAGE_REPORT_PATH: htmlcov
-
 jobs:
   CheckCoverage:
     runs-on: ubuntu-latest
@@ -45,35 +42,26 @@ jobs:
       run: |
         uv run coverage run --rcfile=test/coverage/.coveragerc
         uv run coverage xml
-        echo "=== Coverage Report ==="
         uv run coverage report
-        echo "COVERAGE=$(uv run coverage report | grep TOTAL | awk '{print $4}')" >> $GITHUB_ENV
 
-    - name: Generate HTML coverage report and badge JSON
-      run: |
-        uv run coverage html -d htmlcov
-        COVERAGE_NUM=$(echo ${{ env.COVERAGE }} | sed 's/%//')
-        if (( $(echo "$COVERAGE_NUM >= 90" | bc -l) )); then
-          COLOR="green"
-        elif (( $(echo "$COVERAGE_NUM >= 75" | bc -l) )); then
-          COLOR="yellow"
-        elif (( $(echo "$COVERAGE_NUM >= 60" | bc -l) )); then
-          COLOR="orange"
-        else
-          COLOR="red"
-        fi
-        cat > htmlcov/coverage.json << EOF
-        {
-          "schemaVersion": 1,
-          "label": "coverage",
-          "message": "${{ env.COVERAGE }}",
-          "color": "$COLOR"
-        }
-        EOF
+    - name: Generate HTML coverage report
+      if: matrix.python-version == '3.12'
+      run: uv run coverage html -d htmlcov
 
-    - name: Upload coverage artifact
-      if: matrix.python-version == '3.10' && github.ref == 'refs/heads/main'
+    - name: Generate coverage badge
+      if: matrix.python-version == '3.12'
+      run: uv run genbadge coverage -i coverage.xml -o coverage-badge.svg
+
+    - name: Upload coverage report
+      if: matrix.python-version == '3.12' && github.ref == 'refs/heads/main'
       uses: actions/upload-artifact@v7
       with:
         name: coverage-report
-        path: ${{ env.COVERAGE_REPORT_PATH }}
+        path: htmlcov
+
+    - name: Upload coverage badge
+      if: matrix.python-version == '3.12' && github.ref == 'refs/heads/main'
+      uses: actions/upload-artifact@v7
+      with:
+        name: coverage-badge
+        path: coverage-badge.svg

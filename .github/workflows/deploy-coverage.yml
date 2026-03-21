@@ -13,6 +13,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
   pages: write
   id-token: write
@@ -25,13 +26,37 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Download coverage artifact
+      - name: Find latest successful test run
+        id: find-run
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            RUN_ID=$(gh run list --workflow "Run tests" --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId')
+          else
+            RUN_ID=${{ github.event.workflow_run.id }}
+          fi
+          echo "run-id=$RUN_ID" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Download coverage report
+        if: steps.find-run.outputs.run-id != ''
         uses: actions/download-artifact@v8
         with:
           name: coverage-report
           path: coverage
-          run-id: ${{ github.event.workflow_run.id }}
+          run-id: ${{ steps.find-run.outputs.run-id }}
           github-token: ${{ github.token }}
+        continue-on-error: true
+
+      - name: Download coverage badge
+        if: steps.find-run.outputs.run-id != ''
+        uses: actions/download-artifact@v8
+        with:
+          name: coverage-badge
+          path: coverage
+          run-id: ${{ steps.find-run.outputs.run-id }}
+          github-token: ${{ github.token }}
+        continue-on-error: true
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
