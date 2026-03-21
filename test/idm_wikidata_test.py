@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Marta Soricetti <marta.soricetti@unibo.it>
+#
+# SPDX-License-Identifier: ISC
 
 import json
 import sqlite3

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Arcangelo Massari <arcangelo.massari@unibo.it>
+#
+# SPDX-License-Identifier: ISC
+
 from __future__ import annotations
 
 from oc_ds_converter.oc_idmanager.oc_data_storage.storage_manager import StorageManager

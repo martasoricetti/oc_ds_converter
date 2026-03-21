@@ -1,3 +1,9 @@
+# SPDX-FileCopyrightText: 2023 Marta Soricetti <marta.soricetti@unibo.it>
+# SPDX-FileCopyrightText: 2023-2026 Arcangelo Massari <arcangelo.massari@unibo.it>
+# SPDX-FileCopyrightText: 2025 Arianna Moretti <arianna.moretti4@unibo.it>
+#
+# SPDX-License-Identifier: ISC
+
 import json
 import os
 import unittest

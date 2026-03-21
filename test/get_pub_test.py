@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2023-2024 Arianna Moretti <arianna.moretti4@unibo.it>
+#
+# SPDX-License-Identifier: ISC
+
 import unittest
 from oc_ds_converter.pubmed.get_publishers import ExtractPublisherDOI
 

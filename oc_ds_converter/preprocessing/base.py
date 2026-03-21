@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2023 Arcangelo Massari <arcangelo.massari@unibo.it>
+#
+# SPDX-License-Identifier: ISC
+
 import os.path
 import pathlib
 import tarfile

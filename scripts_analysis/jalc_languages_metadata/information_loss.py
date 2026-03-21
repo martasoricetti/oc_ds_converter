@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2024 Marta Soricetti <marta.soricetti@unibo.it>
+#
+# SPDX-License-Identifier: ISC
+
 import zipfile
 import json
 from jalc_languages_metadata_count import CountMetadataLang

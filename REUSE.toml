@@ -1,0 +1,199 @@
+version = 1
+
+[[annotations]]
+path = ".gitignore"
+SPDX-FileCopyrightText = [
+    "2023-2026 Arcangelo Massari <arcangelo.massari@unibo.it>",
+    "2023-2024 Arianna Moretti <arianna.moretti4@unibo.it>",
+]
+SPDX-License-Identifier = "ISC"
+
+[[annotations]]
+path = [
+    "crossref_cache.json",
+    "oc_ds_converter/crossref/data/.gitkeep",
+    "oc_ds_converter/crossref/data/publishers.csv",
+]
+SPDX-FileCopyrightText = "2026 Arcangelo Massari <arcangelo.massari@unibo.it>"
+SPDX-License-Identifier = "ISC"
+
+[[annotations]]
+path = "pyproject.toml"
+SPDX-FileCopyrightText = [
+    "2023-2026 Arcangelo Massari <arcangelo.massari@unibo.it>",
+    "2023 Arianna Moretti <arianna.moretti4@unibo.it>",
+]
+SPDX-License-Identifier = "ISC"
+
+[[annotations]]
+path = [
+    "oc_ds_converter/pubmed/support_files/*.json",
+    "test/crossref_processing/40228.json",
+    "test/crossref_processing/gzip_test/*.json.gz",
+    "test/crossref_processing/multi_process_test/*.json",
+    "test/crossref_processing/publishers.csv",
+    "test/crossref_processing/tar_gz_test/*.tar.gz",
+    "test/crossref_processing/wanted_dois.csv",
+    "test/crossref_processing/wanted_dois/*.csv",
+    "test/datacite_processing/iod/iod.csv",
+    "test/datacite_processing/jSonFile_1.json",
+    "test/datacite_processing/multi_process_test/*.json",
+    "test/datacite_processing/publishers.csv",
+    "test/datacite_processing/wanted_dois.csv",
+    "test/datacite_processing/wanted_dois/*.csv",
+    "test/datacite_processing/zst_test/**",
+    "test/jalc_processing/wanted_dois/*.csv",
+    "test/preprocess/data_datacite/dc_pp_input.json",
+    "test/preprocess/data_nih/metadata_input.csv",
+    "test/pubmed_process/CSV_iCiteMD_zipped.zip",
+    "test/pubmed_process/csv_file_iod/metadata_input.csv",
+    "test/pubmed_process/csv_files_sample/*.csv",
+    "test/pubmed_process/csv_files_short/*.csv",
+    "test/pubmed_process/support_mat/journals.json",
+    "test/pubmed_process/support_mat/made_up_mat/input/input.csv",
+    "test/pubmed_process/support_mat/made_up_mat/iod/iod.csv",
+    "test/pubmed_process/support_mat/made_up_mat/journals.json",
+    "test/pubmed_process/support_mat/made_up_mat/publishers.json",
+    "test/pubmed_process/support_mat/publishers.json",
+    "test/pubmed_processing/40228.csv",
+    "test/pubmed_processing/CSVFile_1.csv",
+    "test/pubmed_processing/CSVFile_iod_test.csv",
+    "test/pubmed_processing/iod/iod.csv",
+    "test/pubmed_processing/iod_all_cases/*.csv",
+    "test/pubmed_processing/journals.json",
+    "test/pubmed_processing/multi_process_test/*.json",
+    "test/pubmed_processing/wanted_pmids.csv",
+    "test/pubmed_processing/wanted_pmids/*.csv",
+    "test/pubmed_processing/zip_test/*.csv.zip",
+]
+SPDX-FileCopyrightText = "2023 Arcangelo Massari <arcangelo.massari@unibo.it>"
+SPDX-License-Identifier = "ISC"
+
+[[annotations]]
+path = [
+    "test/crossref_processing/iod/iod.csv",
+    "test/jalc_processing/iod/iod.csv",
+]
+SPDX-FileCopyrightText = "2023-2026 Arcangelo Massari <arcangelo.massari@unibo.it>"
+SPDX-License-Identifier = "ISC"
+
+[[annotations]]
+path = [
+    "test/crossref_processing/meta_input/*.csv",
+]
+SPDX-FileCopyrightText = [
+    "2023 Arcangelo Massari <arcangelo.massari@unibo.it>",
+    "2023 Arianna Moretti <arianna.moretti4@unibo.it>",
+]
+SPDX-License-Identifier = "ISC"
+
+[[annotations]]
+path = [
+    "oc_ds_converter/openaire/support_files/prefix_publishers.json",
+    "test/crossref_processing/0.json",
+    "test/crossref_processing/tar_gz_cited_test/*.json.tar.gz",
+    "test/crossref_processing/tar_gz_wrong_cited_doi/*.tar.gz",
+    "test/jalc_process/sample_dump/sample_dump.zip",
+    "test/jalc_process/sample_fake_dump/fake_dump_zip.zip",
+    "test/jalc_processing/dois_1011230-jsts172_1.json",
+    "test/preprocessing_jalc/ZIP_JOCI_TEST/sample_dump.zip",
+]
+SPDX-FileCopyrightText = "2023 Marta Soricetti <marta.soricetti@unibo.it>"
+SPDX-License-Identifier = "ISC"
+
+[[annotations]]
+path = "test/jalc_process/support_mat/iod/iod.csv"
+SPDX-FileCopyrightText = "2023 Marta Soricetti <marta.soricetti@unibo.it>"
+SPDX-License-Identifier = "ISC"
+
+[[annotations]]
+path = [
+    "test/openaire_process/1_tar_sample/*.tar",
+    "test/openaire_process/1alt_tar_sample/*.tar",
+    "test/openaire_process/2_tar_sample/*.tar",
+    "test/openaire_process/duplicates_sample/*.tar",
+    "test/openaire_process/support_mat/journals.json",
+    "test/openaire_process/support_mat/made_up_mat/input/input.csv",
+    "test/openaire_process/support_mat/made_up_mat/iod/iod.csv",
+    "test/openaire_process/support_mat/made_up_mat/journals.json",
+    "test/openaire_process/support_mat/made_up_mat/publishers.json",
+    "test/openaire_process/support_mat/publishers.json",
+    "test/openaire_processing/support_material/publishers.json",
+    "test/pubmed_process/CSV_iCiteMD_zippeddecompr_zip_dir/Users/ariannamorettj/Documents/GitHub/preprocess/test/preprocess/data_poci/csv_files/CSVFile_1_iCiteMD.csv",
+]
+SPDX-FileCopyrightText = "2023 Arianna Moretti <arianna.moretti4@unibo.it>"
+SPDX-License-Identifier = "ISC"
+
+[[annotations]]
+path = [
+    "test/pubmed_process/support_mat/cache1.json",
+    "test/zotero_process/zotero_test1.json",
+]
+SPDX-FileCopyrightText = "2024 Arianna Moretti <arianna.moretti4@unibo.it>"
+SPDX-License-Identifier = "ISC"
+
+[[annotations]]
+path = [
+    "scripts_analysis/jalc_languages_metadata/test/jalc/JOCI_PRE_SAMPLE/sample_jalc.zip",
+    "scripts_analysis/jalc_languages_metadata/test/jalc/sample_count.csv",
+    "test/datacite_process/sample_dc/sample_datacite.ndjson.ndjson.zst",
+    "test/datacite_processing/sample_datacite.ndjson",
+]
+SPDX-FileCopyrightText = "2024 Marta Soricetti <marta.soricetti@unibo.it>"
+SPDX-License-Identifier = "ISC"
+
+[[annotations]]
+path = "test/datacite_process/sample_dc_error/datacite_test_bad.ndjson"
+SPDX-FileCopyrightText = "2025 Arianna Moretti <arianna.moretti4@unibo.it>"
+SPDX-License-Identifier = "ISC"
+
+[[annotations]]
+path = [
+    "test/datacite_process/jsonFiles/*.json",
+    "test/datacite_processing/jSonFile_1_new_dump.json",
+    "test/preprocess/data_datacite/test_datastructure*.tar",
+]
+SPDX-FileCopyrightText = "2026 Marta Soricetti <marta.soricetti@unibo.it>"
+SPDX-License-Identifier = "ISC"
+
+[[annotations]]
+path = "test/data/glob.json"
+SPDX-FileCopyrightText = [
+    "2023 Arcangelo Massari <arcangelo.massari@unibo.it>",
+    "2023 Arianna Moretti <arianna.moretti4@unibo.it>",
+    "2024 Elia Rizzetto <elia.rizzetto2@unibo.it>",
+    "2026 Marta Soricetti <marta.soricetti@unibo.it>",
+]
+SPDX-License-Identifier = "ISC"
+
+[[annotations]]
+path = [
+    "test/pubmed_process/support_mat/cache2.json",
+    "test/pubmed_process/support_mat/cache3.json",
+    "test/pubmed_process/support_mat/cache4.json",
+    "test/pubmed_process/support_mat/cache5.json",
+    "test/pubmed_process/support_mat/cache6.json",
+    "test/pubmed_process/support_mat/cache7.json",
+    "test/pubmed_process/support_mat/cache8.json",
+    "test/pubmed_process/support_mat/cache9.json",
+]
+SPDX-FileCopyrightText = [
+    "2026 Arcangelo Massari <arcangelo.massari@unibo.it>",
+    "2024 Arianna Moretti <arianna.moretti4@unibo.it>",
+    "2026 Marta Soricetti <marta.soricetti@unibo.it>",
+]
+SPDX-License-Identifier = "ISC"
+
+[[annotations]]
+path = [
+    "LICENSE",
+    "REUSE.toml",
+]
+SPDX-FileCopyrightText = "2026 Arcangelo Massari <arcangelo.massari@unibo.it>"
+SPDX-License-Identifier = "ISC"
+
+# Machine-generated files
+[[annotations]]
+path = "uv.lock"
+SPDX-FileCopyrightText = "NONE"
+SPDX-License-Identifier = "CC0-1.0"

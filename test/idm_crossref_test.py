@@ -1,3 +1,9 @@
+# SPDX-FileCopyrightText: 2024 Elia Rizzetto <elia.rizzetto2@unibo.it>
+# SPDX-FileCopyrightText: 2026 Arcangelo Massari <arcangelo.massari@unibo.it>
+# SPDX-FileCopyrightText: 2026 Marta Soricetti <marta.soricetti@unibo.it>
+#
+# SPDX-License-Identifier: ISC
+
 import json
 import unittest
 from os import makedirs
