@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2023 Marta Soricetti <marta.soricetti@unibo.it>
+#
+# SPDX-License-Identifier: ISC
+
 import os
 import os.path
 import unittest

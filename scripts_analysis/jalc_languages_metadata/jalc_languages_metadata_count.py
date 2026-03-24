@@ -1,4 +1,7 @@
-# -*- coding: utf-8 -*-
+# SPDX-FileCopyrightText: 2023-2024 Marta Soricetti <marta.soricetti@unibo.it>
+#
+# SPDX-License-Identifier: ISC
+
 import csv
 import os
 import pathlib

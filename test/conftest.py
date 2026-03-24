@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: 2024 Elia Rizzetto <elia.rizzetto2@unibo.it>
+# SPDX-FileCopyrightText: 2026 Arcangelo Massari <arcangelo.massari@unibo.it>
+#
+# SPDX-License-Identifier: ISC
+
 import json as json_module
 import re
 from urllib.parse import unquote

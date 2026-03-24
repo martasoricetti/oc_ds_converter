@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2023-2024 Marta Soricetti <marta.soricetti@unibo.it>
+#
+# SPDX-License-Identifier: ISC
+
 import unittest
 from scripts_analysis.jalc_languages_metadata.jalc_languages_metadata_count import *
 import csv

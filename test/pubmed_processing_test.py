@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: 2023-2026 Arcangelo Massari <arcangelo.massari@unibo.it>
+# SPDX-FileCopyrightText: 2024 Arianna Moretti <arianna.moretti4@unibo.it>
+#
+# SPDX-License-Identifier: ISC
+
 import csv
 import os
 import unittest

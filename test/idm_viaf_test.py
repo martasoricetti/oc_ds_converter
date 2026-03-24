@@ -1,3 +1,9 @@
+# SPDX-FileCopyrightText: 2023 Arianna Moretti <arianna.moretti4@unibo.it>
+# SPDX-FileCopyrightText: 2025-2026 Arcangelo Massari <arcangelo.massari@unibo.it>
+# SPDX-FileCopyrightText: 2026 Marta Soricetti <marta.soricetti@unibo.it>
+#
+# SPDX-License-Identifier: ISC
+
 from oc_ds_converter.oc_idmanager.viaf import ViafManager
 import json
 import sqlite3
