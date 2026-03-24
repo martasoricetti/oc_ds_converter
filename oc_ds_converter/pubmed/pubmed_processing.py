@@ -12,28 +12,52 @@ from bs4 import BeautifulSoup
 from oc_ds_converter.datasource.redis import FakeRedisWrapper, RedisDataSource
 from oc_ds_converter.lib.cleaner import Cleaner
 from oc_ds_converter.oc_idmanager.doi import DOIManager
+from oc_ds_converter.oc_idmanager.oc_data_storage.batch_manager import BatchManager
 from oc_ds_converter.oc_idmanager.orcid import ORCIDManager
 from oc_ds_converter.oc_idmanager.pmid import PMIDManager
 from oc_ds_converter.pubmed.finder_nih import NIHResourceFinder
 from oc_ds_converter.pubmed.get_publishers import ExtractPublisherDOI
 from oc_ds_converter.ra_processor import RaProcessor
+from oc_ds_converter.oc_idmanager.oc_data_storage.storage_manager import StorageManager
+
 
 warnings.filterwarnings("ignore", category=UserWarning, module='bs4')
 
 
 class PubmedProcessing(RaProcessor):
-    def __init__(self, orcid_index: str | None = None, publishers_filepath_pubmed: str | None = None, journals_filepath: str | None = None, testing: bool = True, exclude_existing: bool = False):
-        super().__init__(orcid_index)
+    def __init__(
+            self,
+            orcid_index: str | None = None,
+            publishers_filepath_pubmed: str | None = None,
+            journals_filepath: str | None = None,
+            storage_manager: StorageManager | None = None,
+            testing: bool = True,
+            exclude_existing: bool = False):
+
+        super().__init__(
+            orcid_index=orcid_index,
+            publishers_filepath=publishers_filepath_pubmed
+        )
+
         self.exclude_existing = exclude_existing
+
+        self.storage_manager = storage_manager
+        self.temporary_manager = BatchManager()
         self.nihrf = NIHResourceFinder()
-        self.doi_m = DOIManager()
-        self.pmid_m = PMIDManager()
+        self.doi_m = DOIManager(storage_manager=self.storage_manager, testing=testing)
+        self.pmid_m = PMIDManager(storage_manager=self.storage_manager, testing=testing)
+        self.tmp_doi_m = DOIManager(storage_manager=self.temporary_manager, testing=testing)
+        self.tmp_pmid_m = PMIDManager(storage_manager=self.temporary_manager, testing=testing)
+
         if testing:
             self.BR_redis = FakeRedisWrapper()
             self.RA_redis = FakeRedisWrapper()
         else:
             self.BR_redis = RedisDataSource("DB-META-BR")
             self.RA_redis = RedisDataSource("DB-META-RA")
+
+        self._redis_values_ra = []
+        self._redis_values_br = []
 
         if not journals_filepath:
             if not exists(os.path.join(pathlib.Path(__file__).parent.resolve(), "support_files")):
@@ -44,7 +68,6 @@ class PubmedProcessing(RaProcessor):
             self.journals_filepath = journals_filepath
 
         self.jour_dict = self.issn_data_recover_poci(self.journals_filepath)
-
 
         if not publishers_filepath_pubmed:
             if not exists(os.path.join(pathlib.Path(__file__).parent.resolve(), "support_files")):
@@ -91,9 +114,11 @@ class PubmedProcessing(RaProcessor):
 
     def csv_creator(self, item: dict) -> dict:
         row = dict()
+
         doi = ""
-        pmid = self.pmid_m.normalise(str(item['pmid']))
-        if pmid:
+        pmid_with_prefix = self.pmid_m.normalise(str(item['pmid']), include_prefix=True)
+        pmid = self.pmid_m.normalise(str(item['pmid']), include_prefix=False)
+        if pmid_with_prefix:
             # create empty row
             keys = ['id', 'title', 'author', 'pub_date', 'venue', 'volume', 'issue', 'page', 'type',
                     'publisher', 'editor']
@@ -107,20 +132,17 @@ class PubmedProcessing(RaProcessor):
 
             # row['id']
             ids_list = list()
-            ids_list.append(str('pmid:' + pmid))
+            ids_list.append(pmid_with_prefix)
             if attributes.get('doi'):
-                doi = DOIManager().normalise(attributes.get('doi'), include_prefix=False)
-                if doi:
-                    doi_w_pref = "doi:"+doi
-                    if self.BR_redis.exists_as_set(doi_w_pref):
-                        ids_list.append(doi_w_pref)
-                    elif self.doi_m.is_valid(doi):
-                        ids_list.append(doi_w_pref)
-                    else:
-                        doi = ''
+                doi_to_normalise = attributes['doi']
+                doi_with_prefix = self.doi_m.normalise(doi_to_normalise, include_prefix=True)
 
+                if doi:
+                    ids_list.append(doi_with_prefix)
 
             row['id'] = ' '.join(ids_list)
+
+            #FATTO FINO A QUA
 
             # row['title']
             pub_title = ""
