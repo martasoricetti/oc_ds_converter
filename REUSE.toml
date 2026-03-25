@@ -1,28 +1,29 @@
 version = 1
 
+# CC0-1.0 — files without creative expression
+
 [[annotations]]
-path = ".gitignore"
-SPDX-FileCopyrightText = [
-    "2023-2026 Arcangelo Massari <arcangelo.massari@unibo.it>",
-    "2023-2024 Arianna Moretti <arianna.moretti4@unibo.it>",
+path = [
+    ".gitignore",
+    ".releaserc.json",
+    "LICENSE",
+    "oc_ds_converter/crossref/data/.gitkeep",
+    "pyproject.toml",
+    "REUSE.toml",
+    "uv.lock",
 ]
-SPDX-License-Identifier = "ISC"
+SPDX-FileCopyrightText = "NONE"
+SPDX-License-Identifier = "CC0-1.0"
+
+# ISC — project files
 
 [[annotations]]
 path = [
     "crossref_cache.json",
-    "oc_ds_converter/crossref/data/.gitkeep",
     "oc_ds_converter/crossref/data/publishers.csv",
+    "test/crossref_processing/reference_filter_test/test_filter.json",
 ]
 SPDX-FileCopyrightText = "2026 Arcangelo Massari <arcangelo.massari@unibo.it>"
-SPDX-License-Identifier = "ISC"
-
-[[annotations]]
-path = "pyproject.toml"
-SPDX-FileCopyrightText = [
-    "2023-2026 Arcangelo Massari <arcangelo.massari@unibo.it>",
-    "2023 Arianna Moretti <arianna.moretti4@unibo.it>",
-]
 SPDX-License-Identifier = "ISC"
 
 [[annotations]]
@@ -78,9 +79,7 @@ SPDX-FileCopyrightText = "2023-2026 Arcangelo Massari <arcangelo.massari@unibo.i
 SPDX-License-Identifier = "ISC"
 
 [[annotations]]
-path = [
-    "test/crossref_processing/meta_input/*.csv",
-]
+path = "test/crossref_processing/meta_input/*.csv"
 SPDX-FileCopyrightText = [
     "2023 Arcangelo Massari <arcangelo.massari@unibo.it>",
     "2023 Arianna Moretti <arianna.moretti4@unibo.it>",
@@ -95,14 +94,10 @@ path = [
     "test/crossref_processing/tar_gz_wrong_cited_doi/*.tar.gz",
     "test/jalc_process/sample_dump/sample_dump.zip",
     "test/jalc_process/sample_fake_dump/fake_dump_zip.zip",
+    "test/jalc_process/support_mat/iod/iod.csv",
     "test/jalc_processing/dois_1011230-jsts172_1.json",
     "test/preprocessing_jalc/ZIP_JOCI_TEST/sample_dump.zip",
 ]
-SPDX-FileCopyrightText = "2023 Marta Soricetti <marta.soricetti@unibo.it>"
-SPDX-License-Identifier = "ISC"
-
-[[annotations]]
-path = "test/jalc_process/support_mat/iod/iod.csv"
 SPDX-FileCopyrightText = "2023 Marta Soricetti <marta.soricetti@unibo.it>"
 SPDX-License-Identifier = "ISC"
 
@@ -178,28 +173,8 @@ path = [
     "test/pubmed_process/support_mat/cache9.json",
 ]
 SPDX-FileCopyrightText = [
-    "2026 Arcangelo Massari <arcangelo.massari@unibo.it>",
     "2024 Arianna Moretti <arianna.moretti4@unibo.it>",
+    "2026 Arcangelo Massari <arcangelo.massari@unibo.it>",
     "2026 Marta Soricetti <marta.soricetti@unibo.it>",
 ]
 SPDX-License-Identifier = "ISC"
-
-[[annotations]]
-path = [
-    ".releaserc.json",
-    "LICENSE",
-    "REUSE.toml",
-]
-SPDX-FileCopyrightText = "2026 Arcangelo Massari <arcangelo.massari@unibo.it>"
-SPDX-License-Identifier = "ISC"
-
-[[annotations]]
-path = "test/crossref_processing/reference_filter_test/test_filter.json"
-SPDX-FileCopyrightText = "2026 Arcangelo Massari <arcangelo.massari@unibo.it>"
-SPDX-License-Identifier = "ISC"
-
-# Machine-generated files
-[[annotations]]
-path = "uv.lock"
-SPDX-FileCopyrightText = "NONE"
-SPDX-License-Identifier = "CC0-1.0"
