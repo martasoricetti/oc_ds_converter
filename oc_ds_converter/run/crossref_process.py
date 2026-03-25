@@ -166,7 +166,8 @@ def _process_citing_entities(
     citing_entity_rows: list[dict] = []
 
     for entity in source_dict:
-        if entity:
+        has_doi_references = [x for x in entity.get("reference", []) if x.get("DOI")]
+        if entity and has_doi_references:
             # For citing entities, validation is not needed; if normalizable, proceed directly to Meta table creation
             norm_source_id = processor.tmp_doi_m.normalise(entity['DOI'], include_prefix=True)
 

@@ -193,6 +193,11 @@ path = [
 SPDX-FileCopyrightText = "2026 Arcangelo Massari <arcangelo.massari@unibo.it>"
 SPDX-License-Identifier = "ISC"
 
+[[annotations]]
+path = "test/crossref_processing/reference_filter_test/test_filter.json"
+SPDX-FileCopyrightText = "2026 Arcangelo Massari <arcangelo.massari@unibo.it>"
+SPDX-License-Identifier = "ISC"
+
 # Machine-generated files
 [[annotations]]
 path = "uv.lock"

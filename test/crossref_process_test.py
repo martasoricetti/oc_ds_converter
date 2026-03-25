@@ -346,6 +346,44 @@ class CrossrefProcessTest(unittest.TestCase):
         if os.path.exists(self.db):
             os.remove(self.db)
 
+    def test_preprocess_filters_entities_without_doi_references(self):
+        """
+        Only entities with at least one reference containing a DOI should be
+        included in the citing entities output. Entities without the reference
+        field, with an empty reference array, or with references lacking DOIs
+        should be excluded.
+        """
+        reference_filter_input = os.path.join(self.test_dir, 'reference_filter_test')
+
+        if os.path.exists(self.output):
+            shutil.rmtree(self.output)
+        citations_output_path = self.output + "_citations"
+        if os.path.exists(citations_output_path):
+            shutil.rmtree(citations_output_path)
+
+        preprocess(
+            crossref_json_dir=reference_filter_input,
+            orcid_doi_filepath=None,
+            csv_dir=self.output,
+            cache=self.cache,
+            use_orcid_api=False
+        )
+
+        # Count citing entities in output
+        citing_entities = []
+        for fname in os.listdir(self.output):
+            if fname.endswith("_citing.csv"):
+                with open(os.path.join(self.output, fname), encoding="utf-8") as f:
+                    for row in csv.DictReader(f):
+                        citing_entities.append(row)
+
+        # Only the entity with DOI "10.1234/reference-with-doi" should be in the output
+        self.assertEqual(len(citing_entities), 1)
+        self.assertIn("doi:10.1234/reference-with-doi", citing_entities[0]["id"])
+
+        shutil.rmtree(citations_output_path)
+        shutil.rmtree(self.output)
+
 
 if __name__ == '__main__':
     unittest.main()
