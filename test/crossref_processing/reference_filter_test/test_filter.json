@@ -1,0 +1,49 @@
+{
+  "items": [
+    {
+      "DOI": "10.1234/no-reference-field",
+      "type": "journal-article",
+      "title": ["Entity without reference field"],
+      "author": [{"given": "John", "family": "Doe"}],
+      "issued": {"date-parts": [[2020, 1, 1]]},
+      "member": "123",
+      "publisher": "Test Publisher"
+    },
+    {
+      "DOI": "10.1234/empty-reference",
+      "type": "journal-article",
+      "title": ["Entity with empty reference array"],
+      "author": [{"given": "Jane", "family": "Doe"}],
+      "issued": {"date-parts": [[2020, 2, 1]]},
+      "member": "123",
+      "publisher": "Test Publisher",
+      "reference": []
+    },
+    {
+      "DOI": "10.1234/reference-no-doi",
+      "type": "journal-article",
+      "title": ["Entity with references but no DOIs"],
+      "author": [{"given": "Bob", "family": "Smith"}],
+      "issued": {"date-parts": [[2020, 3, 1]]},
+      "member": "123",
+      "publisher": "Test Publisher",
+      "reference": [
+        {"key": "ref1", "unstructured": "Some citation without DOI"},
+        {"key": "ref2", "author": "Author Name", "year": "2019", "journal-title": "Some Journal"}
+      ]
+    },
+    {
+      "DOI": "10.1234/reference-with-doi",
+      "type": "journal-article",
+      "title": ["Entity with reference containing DOI"],
+      "author": [{"given": "Alice", "family": "Johnson"}],
+      "issued": {"date-parts": [[2020, 4, 1]]},
+      "member": "123",
+      "publisher": "Test Publisher",
+      "reference": [
+        {"key": "ref1", "unstructured": "Citation without DOI"},
+        {"key": "ref2", "DOI": "10.1016/j.websem.2012.08.001"}
+      ]
+    }
+  ]
+}

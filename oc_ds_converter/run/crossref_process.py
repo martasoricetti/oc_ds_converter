@@ -166,7 +166,8 @@ def _process_citing_entities(
     citing_entity_rows: list[dict] = []
 
     for entity in source_dict:
-        if entity:
+        has_doi_references = [x for x in entity.get("reference", []) if x.get("DOI")]
+        if entity and has_doi_references:
             # For citing entities, validation is not needed; if normalizable, proceed directly to Meta table creation
             norm_source_id = processor.tmp_doi_m.normalise(entity['DOI'], include_prefix=True)
 
@@ -256,6 +257,7 @@ def preprocess(
     testing: bool = True,
     use_redis: bool = False,
     max_workers: int = 1,
+    redis_workers: int | None = None,
     use_orcid_api: bool = True,
     update_publishers: bool = False,
     publishers_max_age: int = 30,
@@ -297,7 +299,9 @@ def preprocess(
         if orcid_doi_filepath:
             console.print('[cyan]Updating DOI-ORCID index in Redis...[/cyan]')
             orcid_index_redis.clear()
-            load_orcid_index_to_redis(orcid_doi_filepath, orcid_index_redis)
+            load_orcid_index_to_redis(
+                orcid_doi_filepath, orcid_index_redis, max_workers=redis_workers
+            )
             console.print('[green]DOI-ORCID index updated in Redis[/green]')
         else:
             console.print('[cyan]Using existing DOI-ORCID index from Redis[/cyan]')
@@ -407,6 +411,9 @@ if __name__ == '__main__':  # pragma: no cover
                                  'Use this flag for tests only, not for production runs.')
     arg_parser.add_argument('-m', '--max_workers', dest='max_workers', required=False, default=1, type=int,
                             help='Workers number')
+    arg_parser.add_argument('--redis-workers', dest='redis_workers', required=False, default=None, type=int,
+                            help='Number of parallel workers for loading DOI-ORCID index to Redis. '
+                                 'Defaults to CPU count if not specified.')
     arg_parser.add_argument('--no-orcid-api', dest='no_orcid_api', action='store_true', required=False,
                             help='Disable ORCID API validation (use only DOI→ORCID index and caches)')
     arg_parser.add_argument('--update-publishers', dest='update_publishers', action='store_true', required=False,
@@ -447,6 +454,7 @@ if __name__ == '__main__':  # pragma: no cover
     storage_path = settings.get('storage_path', args.storage_path) if settings else args.storage_path
     storage_path = normalize_path(storage_path) if storage_path else None
     use_redis = settings.get('use_redis', args.use_redis) if settings else args.use_redis
+    redis_workers = settings.get('redis_workers', args.redis_workers) if settings else args.redis_workers
 
     # SQLite and InMemory don't support concurrent access
     if storage_path and max_workers > 1:
@@ -471,6 +479,7 @@ if __name__ == '__main__':  # pragma: no cover
         testing=testing,
         use_redis=use_redis,
         max_workers=max_workers,
+        redis_workers=redis_workers,
         use_orcid_api=use_orcid_api,
         update_publishers=update_publishers,
         publishers_max_age=publishers_max_age,

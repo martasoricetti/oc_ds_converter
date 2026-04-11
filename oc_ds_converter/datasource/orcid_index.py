@@ -5,8 +5,10 @@
 from __future__ import annotations
 
 import json
+from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from csv import DictReader
-from os import sep, walk
+from os import cpu_count, sep, walk
 from os.path import exists
 from typing import Protocol, cast
 
@@ -63,10 +65,30 @@ class OrcidIndexRedis:
         self._r.flushdb()
 
 
+def _process_csv_file(csv_path: str) -> dict[str, set[str]]:
+    """Process a single CSV file and return DOI -> ORCID mappings.
+
+    This function runs in a separate process for parallelization.
+    """
+    doi_manager = DOIManager()
+    result: dict[str, set[str]] = defaultdict(set)
+
+    with open(csv_path, 'r', encoding='utf-8') as f:
+        reader = DictReader(f)
+        for row in reader:
+            raw_doi = row['id']
+            doi = doi_manager.normalise(raw_doi, include_prefix=True)
+            if doi:
+                result[doi].add(row['value'])
+
+    return dict(result)
+
+
 def load_orcid_index_to_redis(
     orcid_index_dir: str,
     orcid_index_redis: OrcidIndexRedis,
-    batch_size: int = 50000,
+    batch_size: int = 1000000,
+    max_workers: int | None = None,
 ) -> None:
     if not exists(orcid_index_dir):
         return
@@ -77,31 +99,44 @@ def load_orcid_index_to_redis(
             if cur_file.endswith('.csv'):
                 files_to_process.append(cur_dir + sep + cur_file)
 
-    doi_manager = DOIManager()
+    if not files_to_process:
+        return
+
+    if max_workers is None:
+        max_workers = min(cpu_count() or 4, len(files_to_process))
+
+    batch: dict[str, set[str]] = {}
+    count = 0
+
     with create_progress() as progress:
-        task = progress.add_task("[green]Loading DOI-ORCID index files", total=len(files_to_process))
-        batch: dict[str, set[str]] = {}
-        count = 0
+        task = progress.add_task(
+            "[green]Loading DOI-ORCID index files", total=len(files_to_process)
+        )
 
-        for csv_path in files_to_process:
-            with open(csv_path, 'r', encoding='utf-8') as f:
-                reader = DictReader(f)
-                for row in reader:
-                    raw_doi = row['id']
-                    doi = doi_manager.normalise(raw_doi, include_prefix=True)
-                    if not doi:
-                        continue
-                    value = row['value']
-                    if doi not in batch:
-                        batch[doi] = set()
-                    batch[doi].add(value)
-                    count += 1
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(_process_csv_file, path): path
+                for path in files_to_process
+            }
 
-                    if count >= batch_size:
-                        orcid_index_redis.add_values_batch(batch)
-                        batch = {}
-                        count = 0
-            progress.update(task, advance=1)
+            for future in as_completed(futures):
+                file_data = future.result()
+
+                # Merge results into batch
+                for doi, values in file_data.items():
+                    if doi in batch:
+                        batch[doi].update(values)
+                    else:
+                        batch[doi] = values
+                    count += len(values)
+
+                # Flush to Redis when batch is large enough
+                if count >= batch_size:
+                    orcid_index_redis.add_values_batch(batch)
+                    batch = {}
+                    count = 0
+
+                progress.update(task, advance=1)
 
         if batch:
             orcid_index_redis.add_values_batch(batch)
